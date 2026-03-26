@@ -3,6 +3,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 import numpy as np
 import os
+from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
 
@@ -26,6 +27,14 @@ CLASS_NAMES = [
     'Tomato - Yellow Leaf Curl Virus', 'Tomato - Mosaic Virus', 'Tomato - Healthy',
     'Not a Leaf'
 ]
+
+def translate_text(text, target_lang):
+    if target_lang == 'en':
+        return text
+    try:
+        return GoogleTranslator(source='en', target=target_lang).translate(text)
+    except:
+        return text  # fallback to English if translation fails
 
 @app.route('/')
 def index():
@@ -53,9 +62,27 @@ def predict():
         predicted_index = np.argmax(predictions)
         predicted_class = CLASS_NAMES[predicted_index]
 
+        # === AUTO TRANSLATE TO ALL LANGUAGES ===
+        telugu_result  = translate_text(predicted_class, 'te')
+        hindi_result   = translate_text(predicted_class, 'hi')
+        tamil_result   = translate_text(predicted_class, 'ta')
+        kannada_result = translate_text(predicted_class, 'kn')
+
+        # Translate message too
+        base_message = 'Healthy leaf detected!' if 'Healthy' in predicted_class else f'Disease detected: {predicted_class}'
+        telugu_msg  = translate_text(base_message, 'te')
+        hindi_msg   = translate_text(base_message, 'hi')
+        tamil_msg   = translate_text(base_message, 'ta')
+        kannada_msg = translate_text(base_message, 'kn')
+
+        # Not a Leaf handling
         if confidence < 0.35 or predicted_class == 'Not a Leaf':
             return jsonify({
                 'result': 'Not a Leaf',
+                'telugu_result': 'ఆకు కాదు',
+                'hindi_result': 'पत्ता नहीं है',
+                'tamil_result': 'இலை இல்லை',
+                'kannada_result': 'ಎಲೆ ಅಲ್ಲ',
                 'confidence': round(confidence * 100, 2),
                 'is_healthy': False,
                 'message': 'Please upload a clear close-up photo of a leaf.'
@@ -65,9 +92,16 @@ def predict():
 
         return jsonify({
             'result': predicted_class,
+            'telugu_result': telugu_result,
+            'hindi_result': hindi_result,
+            'tamil_result': tamil_result,
+            'kannada_result': kannada_result,
             'confidence': round(confidence * 100, 2),
             'is_healthy': is_healthy,
-            'message': 'Healthy leaf detected!' if is_healthy else f'Disease detected: {predicted_class}'
+            'message': telugu_msg if request.args.get('lang') == 'te' else \
+                       hindi_msg if request.args.get('lang') == 'hi' else \
+                       tamil_msg if request.args.get('lang') == 'ta' else \
+                       kannada_msg if request.args.get('lang') == 'kn' else base_message
         })
 
     except Exception as e:
