@@ -1,113 +1,156 @@
-# 🌿 LeafScanner AI — Plant Disease Detection
 
-**AI-powered mobile-friendly web app** that detects plant leaf diseases in real-time and supports **5 Indian languages** (English, Telugu, Hindi, Tamil, Kannada).
+# 🌿 LeafScanner AI — Plant Disease Detection
+**Version 2.0** | March 2026
+
+**AI-powered mobile-friendly web app** that detects 38 plant leaf diseases + "Not a Leaf" in real-time and supports **5 Indian languages** (English, Telugu, Hindi, Tamil, Kannada) using real-time Google Translate.
 
 ---
 
 ## ✨ Features
-
-- Upload or capture leaf photo
-- Instant diagnosis using deep learning
-- 39 classes (38 diseases + "Not a Leaf")
-- **Real-time translation** for disease name + messages
+- Upload photo or use camera
+- Instant AI diagnosis (MobileNetV2)
+- 39 classes (38 diseases + Not a Leaf)
+- Real-time translation for **every text** (disease name, symptoms, treatment, prevention, message)
 - Full language toggle: English | తెలుగు | हिन्दी | தமிழ் | ಕನ್ನಡ
-- Beautiful responsive UI with glassmorphism design
-- Confidence gauge + severity info
-- PDF report generation, TTS, share, stats
+- Beautiful glassmorphism UI + particle background
+- Confidence gauge, severity badge, PDF report, TTS, share, stats modal
+- Runs completely offline after model download
 
 ---
 
 ## 🚀 How to Run (Super Easy)
 
-1. Open the project folder in VS Code / terminal.
-2. Double-click **`run.bat`** (or run this command):
-
-```bash
-run.bat
-```
-
+1. Open the project folder.
+2. Double-click **`run.bat`** (recommended)  
+   or run in terminal:
+   ```bash
+   run.bat
+   ```
 3. Wait until you see:
    ```
    * Running on http://127.0.0.1:5000
    ```
-4. Open browser → go to **`http://127.0.0.1:5000`**
-5. Upload a clear close-up leaf photo → Analyze!
+4. Open browser → `http://127.0.0.1:5000`
+5. Upload a clear close-up leaf photo → click **Analyze Leaf**
 
-**Note**: Always use `run.bat` — it starts Flask with the correct Python path.
+**Always use `run.bat`** — it uses the correct Python path.
 
 ---
 
 ## 📁 Project Folder Structure
-
 ```
 leaf-disease-app/
-├── app.py                    ← Main Flask app (with Google Translate)
+├── app.py                    ← Flask backend + real-time translation
 ├── run.bat                   ← One-click start script
 ├── requirements.txt
 ├── model/
-│   ├── best_model.h5         ← Best trained model
+│   ├── best_model.h5         ← Best saved model (used by app)
 │   ├── leaf_disease_model.h5
 │   └── training_plot.png
 ├── templates/
-│   └── index.html            ← Full frontend (UI + JS)
-├── data/plantvillage dataset/color/   ← Dataset
-├── train.py                  ← Model training script
-└── venv/                     ← Virtual environment
+│   └── index.html            ← Full frontend (single file)
+├── data/plantvillage dataset/color/   ← Original dataset
+├── train.py                  ← Full training script
+├── venv/                     ← Virtual environment
+└── README.md
 ```
 
 ---
 
-## 🧪 How I Trained the Model (train.py)
+## 🧪 How I Trained the Model (Complete Details)
 
-**Dataset Used**:  
-**PlantVillage Dataset** (color images)  
-- Total images used: **54,306**  
-- Training set: ~80% (~43,445 images)  
-- Validation set: ~20% (~10,861 images)  
-- **39 classes** (38 plant diseases + 1 "Not a Leaf" class added later)
+### 1. Dataset Used
+- **Source**: PlantVillage Dataset (color images)
+- **Total images**: **54,306**
+- **Training set**: ~43,445 images (80%)
+- **Validation set**: ~10,861 images (20%)
+- **Number of classes**: **39** (38 original plant diseases + 1 custom "Not a Leaf" class added later)
 
-**Model Architecture**:
-- **Base**: MobileNetV2 (pre-trained on ImageNet)
-- Transfer learning (frozen base layers)
-- Added: GlobalAveragePooling2D → Dropout(0.3) → Dense(128, relu) → Softmax output
-- Input size: **224×224×3**
+### 2. Preprocessing & Data Augmentation (Exact Code)
+I used `ImageDataGenerator` with the following settings:
 
-**Preprocessing & Augmentation**:
-- Rescale: `/255`
-- Rotation: ±20°
-- Zoom: 0.2
-- Horizontal flip
-- Brightness: 80% – 120%
-- Validation split: 20%
+```python
+train_datagen = ImageDataGenerator(
+    rescale=1./255,                    # Normalize pixel values 0-1
+    rotation_range=20,                 # Random rotation ±20°
+    zoom_range=0.2,                    # Random zoom 20%
+    horizontal_flip=True,              # Random horizontal flip
+    brightness_range=[0.8, 1.2],       # Brightness variation
+    validation_split=0.2               # 20% validation split
+)
 
-**Training Details**:
-- Epochs: **20**
-- Batch size: **32**
-- Optimizer: Adam
-- Loss: Categorical Crossentropy
-- Callbacks: ModelCheckpoint (best_model.h5) + EarlyStopping (patience=5)
-- Final best accuracy: **94.8%** (shown in app stats)
+train_gen = train_datagen.flow_from_directory(
+    DATA_DIR, target_size=(224, 224), batch_size=32,
+    class_mode='categorical', subset='training'
+)
+
+val_gen = train_datagen.flow_from_directory(
+    DATA_DIR, target_size=(224, 224), batch_size=32,
+    class_mode='categorical', subset='validation'
+)
+```
+
+### 3. Model Architecture (Transfer Learning)
+**Base Model**: MobileNetV2 (pre-trained on ImageNet)  
+**Algorithm**: **Transfer Learning** (frozen convolutional base + custom classifier)
+
+Exact code:
+
+```python
+base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model.trainable = False   # Freeze base layers
+
+x = base_model.output
+x = GlobalAveragePooling2D()(x)
+x = Dropout(0.3)(x)
+x = Dense(128, activation='relu')(x)
+output = Dense(NUM_CLASSES, activation='softmax')(x)
+
+model = Model(inputs=base_model.input, outputs=output)
+```
+
+### 4. Training Configuration
+- **Optimizer**: Adam
+- **Loss**: Categorical Crossentropy
+- **Metrics**: Accuracy
+- **Epochs**: 20
+- **Batch Size**: 32
+- **Callbacks**:
+  - `ModelCheckpoint` → saves `best_model.h5`
+  - `EarlyStopping` → patience=5, restores best weights
+
+### 5. Training Results
+- Best Validation Accuracy: **94.8%**
+- Training Plot saved as `model/training_plot.png`
 
 ---
 
 ## 🌍 Multi-Language Support (Real-time Translation)
 
-- Uses **`deep-translator`** + **Google Translate**
-- Automatically translates:
+- Uses **`deep-translator`** + **Google Translator**
+- Every prediction translates:
   - Disease name
-  - Messages
-  - Title (via frontend logic)
-- Supported languages: **English, Telugu (te), Hindi (hi), Tamil (ta), Kannada (kn)**
-- Toggle works instantly without page refresh
+  - Main message
+  - Symptoms (5 points)
+  - Treatment (4 points)
+  - Prevention (6 points)
+- No hardcoded language lists in frontend
 
-**How translation works in `app.py`**:
-- Every prediction calls `GoogleTranslator` for all 4 Indian languages
-- Frontend `showDisease()` picks the correct language based on `lang` variable
+**Backend translation logic** (in `app.py`):
+```python
+def translate_text(text, target_lang):
+    if target_lang == 'en': return text
+    try:
+        return GoogleTranslator(source='en', target=target_lang).translate(text)
+    except:
+        return text
+```
+
+Frontend only picks the correct key (`telugu_result`, `tamil_result`, etc.) based on `lang` variable.
 
 ---
 
-## 📦 Requirements (requirements.txt)
-
+## 📦 Requirements (`requirements.txt`)
 ```txt
 flask
 tensorflow
@@ -122,29 +165,24 @@ pip install -r requirements.txt
 
 ---
 
-## 🔧 How to Add More Languages (Future)
-
-Just add the language code in `app.py` translate function and in frontend `showDisease()`.
-
----
-
-## 📈 Model Performance (from training)
-
-- Training Accuracy: ~96%
-- Validation Accuracy: **94.8%**
-- Training Plot saved in `model/training_plot.png`
+## 🔧 Future Improvements
+- Add more detailed per-class symptoms/treatment/prevention in backend
+- Switch to self-hosted LibreTranslate (100% free & unlimited)
+- Deploy on Render / Railway / Hugging Face
 
 ---
 
-## 📝 Notes from Developer (You)
+## 📝 Complete Technical Summary (Every Small Detail)
 
-- Model saved as `best_model.h5` (used by app)
-- Added "Not a Leaf" class with confidence threshold 0.35
-- Full single-file frontend (`index.html`) with camera, drag-drop, PDF export, TTS, etc.
-- Everything runs locally — no internet needed after model download
+| Step                  | What I Did                                      | Details |
+|-----------------------|--------------------------------------------------|---------|
+| Dataset               | PlantVillage color images                       | 54,306 images, 39 classes |
+| Preprocessing         | ImageDataGenerator + rescaling                  | /255 normalization |
+| Augmentation          | Rotation, zoom, flip, brightness                | See code block above |
+| Model                 | MobileNetV2 + Transfer Learning                 | Frozen base + custom head |
+| Classifier            | GlobalAvgPool → Dropout(0.3) → Dense(128) → Softmax | 39 outputs |
+| Training              | 20 epochs, batch 32, Adam optimizer             | EarlyStopping + Checkpoint |
+| Inference             | Flask + Keras load_model + 224×224 preprocessing| Confidence threshold 0.35 |
+| Translation           | deep-translator + GoogleTranslator              | 5 languages in real-time |
+| Frontend              | Single file HTML + Tailwind + vanilla JS        | Camera, drag-drop, PDF, TTS |
 
----
-
-**Made with ❤️ by sai satya**  
-**Date**: March 2026  
-**Version**: 2.0 (with real-time multi-language translation)
