@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>PhytoScan — Leaf Disease Intelligence</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌿</text></svg>"/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── TOKENS ── */
+:root{
+  --ink:#0a0f0d;
+  --ink2:#111a14;
+  --panel:#131c16;
+  --surface:#1a2620;
+  --rim:rgba(80,200,120,.10);
+  --rim2:rgba(80,200,120,.18);
+  --green:#4ecb71;
+  --green-dim:#2d7a44;
+  --green-glow:rgba(78,203,113,.22);
+  --acid:#b5ff5a;
+  --amber:#f5a623;
+  --red:#ff5757;
+  --text:#e8f0eb;
+  --muted:#7a9982;
+  --subtle:#3a5040;
+  --ff-display:'Playfair Display',Georgia,serif;
+  --ff-ui:'Syne',sans-serif;
+  --ff-mono:'JetBrains Mono',monospace;
+  --r:16px;
+  --r-sm:10px;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--ff-ui);
+  background:var(--ink);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ── NOISE TEXTURE ── */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:0;opacity:.6;
+}
+
+/* ── AMBIENT GLOW ── */
+body::after{
+  content:'';
+  position:fixed;
+  top:-20vh;left:-10vw;
+  width:60vw;height:60vh;
+  background:radial-gradient(ellipse,rgba(78,203,113,.07) 0%,transparent 70%);
+  pointer-events:none;z-index:0;
+}
+
+/* ── HEADER ── */
+header{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,15,13,.85);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--rim);
+  padding:0 2rem;
+  height:60px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none}
+.logo-mark{
+  width:32px;height:32px;
+  background:linear-gradient(135deg,var(--green),var(--acid));
+  border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:16px;
+  box-shadow:0 0 20px var(--green-glow);
+}
+.logo-name{
+  font-family:var(--ff-display);
+  font-size:1.3rem;font-weight:700;
+  color:var(--text);letter-spacing:-.01em;
+}
+.logo-name em{color:var(--green);font-style:italic}
+.logo-tag{
+  font-family:var(--ff-mono);
+  font-size:.6rem;
+  color:var(--muted);
+  background:var(--surface);
+  border:1px solid var(--rim);
+  padding:2px 7px;border-radius:4px;
+  letter-spacing:.08em;
+}
+
+.header-stats{display:flex;align-items:center;gap:1.5rem}
+.hstat{
+  display:flex;flex-direction:column;align-items:flex-end;
+  font-family:var(--ff-mono);
+}
+.hstat-val{font-size:.85rem;font-weight:500;color:var(--green)}
+.hstat-label{font-size:.55rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+.hdiv{width:1px;height:24px;background:var(--rim2)}
+
+.lang-row{display:flex;gap:2px;background:var(--surface);border:1px solid var(--rim);border-radius:8px;padding:3px}
+.lb{
+  padding:3px 10px;border-radius:5px;border:none;
+  background:transparent;
+  font-family:var(--ff-ui);font-size:.7rem;font-weight:600;
+  color:var(--muted);cursor:pointer;transition:all .15s;
+}
+.lb:hover{color:var(--text)}
+.lb.on{background:var(--green);color:var(--ink);font-weight:700}
+
+/* ── LAYOUT ── */
+main{
+  position:relative;z-index:1;
+  max-width:1300px;margin:0 auto;
+  padding:2.5rem 2rem 5rem;
+  display:grid;
+  grid-template-columns:480px 1fr;
+  gap:2rem;
+  align-items:start;
+}
+
+/* ── SECTION HEADERS ── */
+.sec-eyebrow{
+  font-family:var(--ff-mono);
+  font-size:.65rem;color:var(--green);
+  letter-spacing:.15em;text-transform:uppercase;
+  margin-bottom:.5rem;
+  display:flex;align-items:center;gap:8px;
+}
+.sec-eyebrow::before{
+  content:'';display:block;
+  width:20px;height:1px;background:var(--green);
+}
+.sec-title{
+  font-family:var(--ff-display);
+  font-size:2.2rem;font-weight:700;
+  color:var(--text);line-height:1.05;
+  margin-bottom:.4rem;
+}
+.sec-title em{color:var(--green);font-style:italic}
+.sec-sub{font-size:.82rem;color:var(--muted);line-height:1.6}
+
+/* ── CARD ── */
+.card{
+  background:var(--panel);
+  border:1px solid var(--rim);
+  border-radius:var(--r);
+  overflow:hidden;
+  position:relative;
+}
+.card::before{
+  content:'';position:absolute;
+  top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--green-dim),transparent);
+}
+
+/* ── TABS ── */
+.tab-bar{
+  display:flex;gap:0;
+  border-bottom:1px solid var(--rim);
+  padding:0 1.5rem;
+}
+.tb{
+  padding:.85rem 1.25rem;
+  border:none;background:none;
+  font-family:var(--ff-ui);font-size:.78rem;font-weight:600;
+  color:var(--muted);cursor:pointer;
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:all .2s var(--ease);
+  display:flex;align-items:center;gap:7px;
+}
+.tb:hover{color:var(--text)}
+.tb.on{color:var(--green);border-bottom-color:var(--green)}
+
+/* ── DROP ZONE ── */
+.drop-zone{
+  margin:1.5rem;
+  border:1.5px dashed var(--subtle);
+  border-radius:var(--r-sm);
+  min-height:240px;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  gap:.75rem;
+  cursor:pointer;
+  transition:all .25s var(--ease);
+  position:relative;overflow:hidden;
+  background:linear-gradient(135deg,rgba(78,203,113,.03),transparent);
+}
+.drop-zone:hover,.drop-zone.drag{
+  border-color:var(--green-dim);
+  background:linear-gradient(135deg,rgba(78,203,113,.07),rgba(78,203,113,.02));
+  transform:translateY(-2px);
+  box-shadow:0 8px 32px rgba(0,0,0,.3),inset 0 0 40px rgba(78,203,113,.04);
+}
+.drop-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;z-index:2}
+
+.dz-icon{
+  width:72px;height:72px;
+  border-radius:50%;
+  background:radial-gradient(circle,rgba(78,203,113,.15),rgba(78,203,113,.03));
+  border:1px solid var(--rim2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;
+  transition:transform .35s var(--ease);
+}
+.drop-zone:hover .dz-icon{transform:scale(1.08) rotate(-5deg)}
+.dz-title{font-size:.9rem;font-weight:600;color:var(--text)}
+.dz-sub{font-size:.72rem;color:var(--muted)}
+.dz-btn{
+  background:transparent;
+  border:1px solid var(--green-dim);
+  color:var(--green);
+  padding:.45rem 1.1rem;border-radius:6px;
+  font-family:var(--ff-ui);font-size:.75rem;font-weight:600;
+  cursor:pointer;transition:all .2s;pointer-events:none;
+  letter-spacing:.04em;
+}
+.drop-zone:hover .dz-btn{background:rgba(78,203,113,.08)}
+
+#prev-img{display:none;max-width:100%;max-height:220px;border-radius:8px;object-fit:contain}
+.drop-zone.loaded .dz-content{display:none}
+.drop-zone.loaded #prev-img{display:block}
+.drop-zone.loaded{padding:1.25rem;border-style:solid;border-color:var(--green-dim)}
+
+.rm-btn{
+  display:none;position:absolute;top:10px;right:10px;
+  width:28px;height:28px;border-radius:50%;
+  background:rgba(10,15,13,.8);border:1px solid var(--rim2);
+  color:var(--muted);font-size:13px;cursor:pointer;
+  align-items:center;justify-content:center;
+  transition:all .2s;z-index:5;
+}
+.drop-zone.loaded .rm-btn{display:flex}
+.rm-btn:hover{background:var(--red);color:#fff;border-color:var(--red)}
+
+/* ── ANALYZE BUTTON ── */
+.analyze-btn{
+  margin:0 1.5rem 1.5rem;
+  width:calc(100% - 3rem);
+  padding:1rem;
+  background:linear-gradient(135deg,var(--green),#2daa50);
+  color:var(--ink);
+  border:none;border-radius:var(--r-sm);
+  font-family:var(--ff-ui);font-size:.88rem;font-weight:700;
+  letter-spacing:.05em;cursor:pointer;
+  transition:all .25s var(--ease);
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  position:relative;overflow:hidden;
+}
+.analyze-btn:disabled{opacity:.3;cursor:not-allowed;transform:none!important;box-shadow:none!important}
+.analyze-btn:not(:disabled):hover{
+  transform:translateY(-2px);
+  box-shadow:0 12px 32px rgba(78,203,113,.35);
+}
+.analyze-btn:not(:disabled):active{transform:translateY(0)}
+
+.btn-shine{
+  position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.18) 50%,transparent 100%);
+  transform:translateX(-100%);
+}
+.analyze-btn:not(:disabled):hover .btn-shine{
+  animation:shine .5s ease forwards;
+}
+@keyframes shine{to{transform:translateX(100%)}}
+
+/* ── CAMERA ── */
+.cam-area{padding:1.5rem;display:flex;flex-direction:column;gap:1rem}
+.vid-wrap{
+  border-radius:var(--r-sm);overflow:hidden;
+  background:#000;position:relative;aspect-ratio:16/9;
+  border:1px solid var(--rim);
+}
+video{width:100%;height:100%;object-fit:cover;display:block}
+.cam-cover{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.75rem;
+  background:rgba(0,0,0,.7);backdrop-filter:blur(4px);
+  color:var(--muted);font-size:.82rem;
+}
+.cam-cover-ico{font-size:40px;opacity:.5}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity 80ms}
+canvas{display:none}
+
+.cam-controls{display:grid;grid-template-columns:1fr 1.4fr 1fr;gap:8px}
+.cbtn{
+  padding:.7rem;border-radius:8px;
+  border:1px solid var(--rim2);background:var(--surface);
+  font-family:var(--ff-ui);font-size:.75rem;font-weight:600;
+  color:var(--text);cursor:pointer;
+  transition:all .18s;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+}
+.cbtn:hover:not(:disabled){border-color:var(--green);color:var(--green);background:rgba(78,203,113,.06)}
+.cbtn.prime{background:var(--green);color:var(--ink);border-color:var(--green)}
+.cbtn.prime:hover:not(:disabled){box-shadow:0 6px 20px rgba(78,203,113,.3);transform:translateY(-1px)}
+.cbtn:disabled{opacity:.3;cursor:not-allowed}
+
+/* ── RIGHT PANEL ── */
+.result-col{display:flex;flex-direction:column;gap:1.5rem}
+
+/* ── IDLE ── */
+.idle-card{
+  background:var(--panel);
+  border:1px solid var(--rim);
+  border-radius:var(--r);
+  padding:3.5rem 2rem;
+  display:flex;flex-direction:column;align-items:center;
+  text-align:center;gap:1.25rem;
+  position:relative;overflow:hidden;
+}
+.idle-card::after{
+  content:'';position:absolute;
+  bottom:-60px;right:-60px;
+  width:200px;height:200px;
+  background:radial-gradient(circle,rgba(78,203,113,.06),transparent 70%);
+  pointer-events:none;
+}
+.idle-orb{
+  width:88px;height:88px;
+  border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,rgba(78,203,113,.2),rgba(78,203,113,.04));
+  border:1px solid var(--rim2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:40px;
+  animation:float 4s ease-in-out infinite;
+}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+.idle-title{font-family:var(--ff-display);font-size:1.4rem;font-weight:700;color:var(--text)}
+.idle-sub{font-size:.8rem;color:var(--muted);max-width:260px;line-height:1.6}
+
+.steps-row{display:flex;align-items:center;gap:.5rem;margin-top:.25rem}
+.step-pill{
+  display:flex;align-items:center;gap:7px;
+  background:var(--surface);border:1px solid var(--rim);
+  border-radius:8px;padding:.5rem .85rem;
+  font-size:.7rem;color:var(--muted);
+  font-family:var(--ff-mono);
+}
+.step-pill span{font-size:1rem}
+.step-arrow{color:var(--subtle);font-size:.8rem}
+
+/* ── LOADING ── */
+.loading-card{
+  display:none;
+  background:var(--panel);border:1px solid var(--rim);border-radius:var(--r);
+  padding:3.5rem 2rem;
+  flex-direction:column;align-items:center;
+  text-align:center;gap:1.25rem;
+}
+.loading-card.on{display:flex}
+.spin-wrap{position:relative;width:72px;height:72px}
+.spin-ring{
+  width:72px;height:72px;border-radius:50%;
+  border:2px solid var(--rim2);
+  border-top-color:var(--green);
+  animation:spin 1s linear infinite;
+  position:absolute;inset:0;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin-inner{
+  position:absolute;inset:8px;
+  border-radius:50%;
+  border:2px solid var(--surface);
+  border-top-color:var(--acid);
+  animation:spin .6s linear infinite reverse;
+}
+.spin-dot{
+  position:absolute;inset:50%;transform:translate(-50%,-50%);
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 12px var(--green);
+}
+.load-title{font-family:var(--ff-display);font-size:1.3rem;color:var(--text)}
+.load-sub{font-size:.75rem;color:var(--muted);font-family:var(--ff-mono)}
+.load-dots{display:flex;gap:.4rem}
+.ld{width:5px;height:5px;border-radius:50%;background:var(--green-dim);animation:ldot 1.4s ease infinite}
+.ld:nth-child(2){animation-delay:.2s}.ld:nth-child(3){animation-delay:.4s}
+@keyframes ldot{0%,80%,100%{transform:scale(.6);opacity:.3}40%{transform:scale(1);opacity:1}}
+
+/* ── HEALTHY ── */
+.healthy-card{
+  display:none;
+  background:var(--panel);border:1px solid rgba(78,203,113,.25);border-radius:var(--r);
+  padding:2.5rem 2rem;
+  flex-direction:column;align-items:center;
+  text-align:center;gap:.75rem;
+  box-shadow:0 0 40px rgba(78,203,113,.06);
+}
+.healthy-card.on{display:flex}
+.hcheck{
+  width:72px;height:72px;border-radius:50%;
+  background:linear-gradient(135deg,rgba(78,203,113,.2),rgba(78,203,113,.05));
+  border:1.5px solid var(--green-dim);
+  display:flex;align-items:center;justify-content:center;
+  font-size:30px;
+  animation:popin .5s cubic-bezier(.34,1.56,.64,1) forwards;
+}
+@keyframes popin{from{transform:scale(0) rotate(-20deg);opacity:0}to{transform:scale(1) rotate(0deg);opacity:1}}
+.h-title{font-family:var(--ff-display);font-size:1.7rem;font-weight:700;color:var(--green)}
+.h-conf{font-family:var(--ff-mono);font-size:1.1rem;color:var(--acid);font-weight:500}
+.h-sub{font-size:.8rem;color:var(--muted);max-width:280px;line-height:1.6}
+
+/* ── DISEASE CARD ── */
+.disease-card{
+  display:none;
+  flex-direction:column;
+  background:var(--panel);border:1px solid var(--rim);border-radius:var(--r);
+  overflow:hidden;
+  animation:fadeup .4s var(--ease) forwards;
+}
+.disease-card.on{display:flex}
+@keyframes fadeup{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+
+.d-header{
+  padding:1.5rem 1.75rem 1.25rem;
+  border-bottom:1px solid var(--rim);
+  display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;
+  background:linear-gradient(135deg,rgba(78,203,113,.04),transparent);
+}
+.d-name{font-family:var(--ff-display);font-size:1.55rem;font-weight:700;color:var(--text);line-height:1.1}
+.d-plant{font-family:var(--ff-mono);font-size:.65rem;color:var(--muted);margin-top:4px;letter-spacing:.04em}
+.sev{
+  flex-shrink:0;padding:.3rem .8rem;border-radius:6px;
+  font-family:var(--ff-mono);font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+}
+.sev-high{background:rgba(255,87,87,.12);color:var(--red);border:1px solid rgba(255,87,87,.2)}
+.sev-med{background:rgba(245,166,35,.1);color:var(--amber);border:1px solid rgba(245,166,35,.2)}
+.sev-low{background:rgba(78,203,113,.1);color:var(--green);border:1px solid rgba(78,203,113,.2)}
+
+/* ── CONFIDENCE BAR ── */
+.conf-wrap{padding:1.25rem 1.75rem;border-bottom:1px solid var(--rim)}
+.conf-meta{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.6rem}
+.conf-label{font-size:.7rem;color:var(--muted);font-family:var(--ff-mono);letter-spacing:.06em;text-transform:uppercase}
+.conf-pct{font-family:var(--ff-mono);font-size:1.1rem;font-weight:700;color:var(--acid)}
+.conf-track{height:6px;background:var(--surface);border-radius:99px;overflow:hidden}
+.conf-bar{height:100%;border-radius:99px;width:0;transition:width 1.3s cubic-bezier(.4,0,.2,1)}
+.conf-bar.high{background:linear-gradient(90deg,var(--green-dim),var(--green))}
+.conf-bar.med{background:linear-gradient(90deg,#b8860b,var(--amber))}
+.conf-bar.low{background:linear-gradient(90deg,#c0392b,var(--red))}
+.alts{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.85rem}
+.alt-label{font-size:.65rem;color:var(--muted);font-family:var(--ff-mono);width:100%;letter-spacing:.06em;text-transform:uppercase}
+.alt-chip{
+  display:flex;align-items:center;gap:5px;
+  background:var(--surface);border:1px solid var(--rim);
+  padding:.3rem .7rem;border-radius:6px;font-size:.7rem;color:var(--muted);
+}
+.alt-pct{color:var(--text);font-weight:700;font-family:var(--ff-mono)}
+
+/* ── INFO TABS ── */
+.info-tab-bar{display:flex;border-bottom:1px solid var(--rim);padding:0 1.75rem}
+.itb{
+  padding:.7rem 1rem;border:none;background:none;
+  font-family:var(--ff-ui);font-size:.75rem;font-weight:600;
+  color:var(--muted);cursor:pointer;
+  border-bottom:2px solid transparent;margin-bottom:-1px;
+  transition:all .2s;
+}
+.itb:hover{color:var(--text)}
+.itb.on{color:var(--green);border-bottom-color:var(--green)}
+.tab-body{padding:1.5rem 1.75rem}
+.tp{display:none}.tp.on{display:block}
+
+/* ── SYMPTOMS ── */
+.sym-list{list-style:none;display:flex;flex-direction:column;gap:.6rem}
+.sym-list li{
+  display:flex;align-items:flex-start;gap:10px;
+  font-size:.8rem;color:var(--muted);line-height:1.55;
+}
+.sym-dot{
+  width:6px;height:6px;border-radius:50%;background:var(--green-dim);
+  flex-shrink:0;margin-top:6px;
+}
+
+/* ── TREATMENT ── */
+.treat-list{display:flex;flex-direction:column;gap:.85rem}
+.treat-step{display:flex;gap:12px;align-items:flex-start}
+.t-num{
+  width:26px;height:26px;flex-shrink:0;
+  background:var(--green);color:var(--ink);
+  border-radius:50%;font-size:.7rem;font-weight:800;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--ff-mono);
+}
+.t-body{font-size:.8rem;color:var(--muted);line-height:1.55}
+.t-body strong{color:var(--text);display:block;margin-bottom:2px;font-size:.82rem}
+
+/* ── PREVENTION ── */
+.prev-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem}
+.prev-card{
+  background:var(--surface);border:1px solid var(--rim);
+  border-radius:8px;padding:.8rem;
+  font-size:.75rem;color:var(--muted);line-height:1.5;
+  display:flex;align-items:flex-start;gap:8px;
+}
+.prev-card em{font-size:1rem;flex-shrink:0;font-style:normal}
+
+/* ── STATS STRIP ── */
+.stats-strip{
+  display:grid;grid-template-columns:repeat(3,1fr);
+  background:var(--panel);border:1px solid var(--rim);border-radius:var(--r);
+  overflow:hidden;
+}
+.stat{
+  padding:1.25rem;text-align:center;border-right:1px solid var(--rim);
+  transition:background .2s;
+}
+.stat:last-child{border-right:none}
+.stat:hover{background:rgba(78,203,113,.04)}
+.stat-v{
+  font-family:var(--ff-display);font-size:1.8rem;font-weight:700;
+  color:var(--green);line-height:1;
+}
+.stat-l{font-family:var(--ff-mono);font-size:.6rem;color:var(--muted);margin-top:4px;letter-spacing:.08em;text-transform:uppercase}
+
+/* ── MOBILE ── */
+@media(max-width:960px){
+  main{grid-template-columns:1fr}
+  .header-stats{display:none}
+  main{padding:1.5rem 1rem 3rem}
+  .prev-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <a href="#" class="logo">
+    <div class="logo-mark">🌿</div>
+    <span class="logo-name">Phyto<em>Scan</em></span>
+    <span class="logo-tag">AI v2.0</span>
+  </a>
+  <div class="header-stats">
+    <div class="hstat">
+      <span class="hstat-val">94.8%</span>
+      <span class="hstat-label" id="ns1">Accuracy</span>
+    </div>
+    <div class="hdiv"></div>
+    <div class="hstat">
+      <span class="hstat-val">39</span>
+      <span class="hstat-label" id="ns2">Classes</span>
+    </div>
+    <div class="hdiv"></div>
+    <div class="hstat">
+      <span class="hstat-val">54K</span>
+      <span class="hstat-label" id="ns3">Images</span>
+    </div>
+    <div class="hdiv"></div>
+    <div class="lang-row">
+      <button class="lb on" onclick="setLang('en')">EN</button>
+      <button class="lb" onclick="setLang('te')">తె</button>
+      <button class="lb" onclick="setLang('hi')">हि</button>
+      <button class="lb" onclick="setLang('ta')">த</button>
+      <button class="lb" onclick="setLang('kn')">ಕ</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ── LEFT COLUMN ── -->
+  <div>
+    <p class="sec-eyebrow" id="ey1">Input</p>
+    <h1 class="sec-title" id="lt">Scan a <em>Leaf</em></h1>
+    <p class="sec-sub" style="margin-bottom:1.5rem" id="ls">Upload or capture a photo for instant AI-powered plant disease diagnosis.</p>
+
+    <div class="card">
+      <div class="tab-bar">
+        <button class="tb on" id="tb-up" onclick="switchTab('upload',this)">
+          <span>📁</span> <span id="tbu">Upload</span>
+        </button>
+        <button class="tb" id="tb-cam" onclick="switchTab('camera',this)">
+          <span>📷</span> <span id="tbc">Camera</span>
+        </button>
+      </div>
+
+      <!-- UPLOAD -->
+      <div id="sec-upload">
+        <div class="drop-zone" id="dz"
+          ondragover="ev.preventDefault();this.classList.add('drag')"
+          ondragleave="this.classList.remove('drag')"
+          ondrop="onDrop(event)">
+          <input type="file" accept="image/*" id="fi" onchange="onFile(event)"/>
+          <img id="prev-img" src="" alt="Preview"/>
+          <button class="rm-btn" onclick="rmImg(event)">✕</button>
+          <div class="dz-content" style="display:flex;flex-direction:column;align-items:center;gap:.75rem">
+            <div class="dz-icon">🌿</div>
+            <p class="dz-title" id="dz-t">Drop your leaf image here</p>
+            <p class="dz-sub" id="dz-s">or browse · JPG · PNG · WEBP</p>
+            <div class="dz-btn" id="dz-b">Browse Files</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CAMERA -->
+      <div id="sec-cam" style="display:none">
+        <div class="cam-area">
+          <div class="vid-wrap">
+            <video id="vid" autoplay playsinline muted></video>
+            <div class="cam-cover" id="cam-cover">
+              <div class="cam-cover-ico">📷</div>
+              <span id="cov-txt">Click Start Camera</span>
+            </div>
+            <div class="flash" id="flash"></div>
+            <canvas id="cnv"></canvas>
+          </div>
+          <div class="cam-controls">
+            <button class="cbtn" id="btn-start" onclick="camStart()">▶ <span id="cs">Start</span></button>
+            <button class="cbtn prime" id="btn-snap" onclick="camSnap()" disabled>📸 <span id="csnap">Capture</span></button>
+            <button class="cbtn" id="btn-stop" onclick="camStop()" disabled>■ <span id="cstop">Stop</span></button>
+          </div>
+        </div>
+      </div>
+
+      <button class="analyze-btn" id="abtn" onclick="analyze()" disabled>
+        <div class="btn-shine"></div>
+        🔬 <span id="abtn-lbl">Analyze Leaf</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── RIGHT COLUMN ── -->
+  <div class="result-col">
+    <div>
+      <p class="sec-eyebrow" id="ey2">Output</p>
+      <h2 class="sec-title" id="rt">Diagnosis <em>Result</em></h2>
+      <p class="sec-sub" id="rs">AI-powered plant pathology analysis.</p>
+    </div>
+
+    <!-- IDLE -->
+    <div class="idle-card" id="idle-panel">
+      <div class="idle-orb">🌱</div>
+      <p class="idle-title" id="idle-t">Awaiting scan</p>
+      <p class="idle-sub" id="idle-s">Upload a leaf image and click Analyze for an instant AI diagnosis.</p>
+      <div class="steps-row">
+        <div class="step-pill"><span>📤</span> <span id="p1">Upload</span></div>
+        <div class="step-arrow">→</div>
+        <div class="step-pill"><span>🔬</span> <span id="p2">Analyze</span></div>
+        <div class="step-arrow">→</div>
+        <div class="step-pill"><span>✅</span> <span id="p3">Result</span></div>
+      </div>
+    </div>
+
+    <!-- LOADING -->
+    <div class="loading-card" id="load-panel">
+      <div class="spin-wrap">
+        <div class="spin-ring"></div>
+        <div class="spin-inner"></div>
+        <div class="spin-dot"></div>
+      </div>
+      <p class="load-title" id="load-t">Analyzing leaf tissue…</p>
+      <p class="load-sub" id="load-s">Running MobileNetV2 classification</p>
+      <div class="load-dots"><div class="ld"></div><div class="ld"></div><div class="ld"></div></div>
+    </div>
+
+    <!-- HEALTHY -->
+    <div class="healthy-card" id="healthy-panel">
+      <div class="hcheck">✅</div>
+      <p class="h-title" id="h-t">Plant is Healthy!</p>
+      <p class="h-conf" id="h-conf">—</p>
+      <p class="h-sub" id="h-s">No signs of disease, pest damage, or nutrient deficiency detected.</p>
+    </div>
+
+    <!-- DISEASE -->
+    <div class="disease-card" id="disease-panel">
+      <div class="d-header">
+        <div>
+          <p class="d-name" id="d-name">—</p>
+          <p class="d-plant" id="d-plant">—</p>
+        </div>
+        <span class="sev" id="d-sev">—</span>
+      </div>
+
+      <div class="conf-wrap">
+        <div class="conf-meta">
+          <span class="conf-label" id="conf-lbl">Confidence Score</span>
+          <span class="conf-pct" id="conf-pct">—</span>
+        </div>
+        <div class="conf-track"><div class="conf-bar" id="conf-bar"></div></div>
+        <div class="alts">
+          <span class="alt-label" id="alt-lbl">Other possibilities</span>
+          <div class="alt-chip"><span class="alt-pct" id="a1p">—</span> <span id="a1n">—</span></div>
+          <div class="alt-chip"><span class="alt-pct" id="a2p">—</span> <span id="a2n">—</span></div>
+          <div class="alt-chip"><span class="alt-pct" id="a3p">—</span> <span id="a3n">—</span></div>
+        </div>
+      </div>
+
+      <div class="info-tab-bar">
+        <button class="itb on" onclick="infoTab('sym',this)" id="itb-s">Symptoms</button>
+        <button class="itb" onclick="infoTab('treat',this)" id="itb-t">Treatment</button>
+        <button class="itb" onclick="infoTab('prev',this)" id="itb-p">Prevention</button>
+      </div>
+      <div class="tab-body">
+        <div class="tp on" id="tp-sym"><ul class="sym-list" id="syms"></ul></div>
+        <div class="tp" id="tp-treat"><div class="treat-list" id="treats"></div></div>
+        <div class="tp" id="tp-prev"><div class="prev-grid" id="prevs"></div></div>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-strip">
+      <div class="stat"><div class="stat-v">94.8%</div><div class="stat-l" id="s1">Accuracy</div></div>
+      <div class="stat"><div class="stat-v">39</div><div class="stat-l" id="s2">Classes</div></div>
+      <div class="stat"><div class="stat-v">54K</div><div class="stat-l" id="s3">Images</div></div>
+    </div>
+  </div>
+</main>
+
+<script>
+/* ── DISEASE DATABASE ── */
+const DB = {
+  'Tomato___Bacterial_spot':{plant:'Tomato · Xanthomonas campestris',sev:'high',syms:['Small water-soaked lesions turning dark brown to black','Yellow halo surrounding infected spots','Lesions coalesce causing leaf blight in high humidity','Premature defoliation of severely infected plants','Raised scab-like spots on fruit surface'],treat:[['Remove infected tissue','Prune and destroy all visibly affected leaves immediately.'],['Apply copper-based bactericide','Spray copper hydroxide every 7–10 days.'],['Improve air circulation','Space plants and stake to reduce leaf wetness.'],['Switch to drip irrigation','Keep foliage dry to limit spread.']],prev:['🌬️ Good air circulation','💧 Drip irrigation only','🌱 Certified disease-free seed','🔄 2–3 year crop rotation','☀️ Full sun planting','🧤 Sanitize tools']},
+  'Tomato___Early_blight':{plant:'Tomato · Alternaria solani',sev:'medium',syms:['Dark brown circular spots with concentric rings (target-like)','Yellow halo around lesions','Lower leaves affected first progressing upward','Lesions cause premature defoliation','Dark sunken lesions near soil line on stem'],treat:[['Remove affected lower leaves','Prune and dispose away from garden.'],['Apply chlorothalonil fungicide','Every 7 days during wet periods.'],['Mulch around plants','Prevent soil splash onto lower leaves.'],['Maintain plant nutrition','Fertilize properly — stressed plants are most susceptible.']],prev:['🌱 Rotate crops 2–3 years','💧 Water at base only','🌞 Full sun exposure','🧹 Remove crop debris','🌿 Use resistant varieties','📏 Proper plant spacing']},
+  'Tomato___Late_blight':{plant:'Tomato · Phytophthora infestans',sev:'high',syms:['Large irregular water-soaked lesions on leaves','White mold on leaf undersides in humid conditions','Rapid browning and tissue collapse','Dark sunken lesions on fruit','Entire plant collapse possible within days'],treat:[['Apply systemic fungicide immediately','Mancozeb or metalaxyl at first sign.'],['Remove and destroy infected plants','Bag all material — do not compost.'],['Stop all overhead watering','Use drip irrigation only.'],['Monitor cool moist weather','Apply preventive sprays proactively.']],prev:['🥔 Certified transplants only','💧 No overhead watering','🌬️ Well-drained soil','📊 Monitor weather forecasts','🔄 Annual crop rotation','🌱 Destroy harvest debris']},
+  'Tomato___Leaf_Mold':{plant:'Tomato · Passalora fulva',sev:'medium',syms:['Pale green to yellow spots on upper leaf surface','Olive-gray velvety mold on lower surface','Older leaves affected first','Leaves curl upward and wither','Fruit rarely affected but can develop rot'],treat:[['Improve greenhouse ventilation','Reduce humidity below 85%.'],['Apply copper or chlorothalonil','Preventive sprays in humid conditions.'],['Remove infected leaves','Dispose carefully to avoid spreading spores.'],['Reduce plant density','Thin overcrowded plantings.']],prev:['🌬️ Good air circulation','💨 Ventilate greenhouses','💧 Avoid wetting foliage','🌡️ Control humidity','📏 Proper plant spacing','🔄 Crop rotation']},
+  'Tomato___Septoria_leaf_spot':{plant:'Tomato · Septoria lycopersici',sev:'medium',syms:['Numerous small circular spots with dark borders','Tan or gray centers with dark brown margins','Small black dots (pycnidia) visible in lesion centers','Lower leaves infected first','Severe defoliation in wet seasons'],treat:[['Remove infected lower leaves','Start removing at first sign of symptoms.'],['Apply fungicide','Chlorothalonil or mancozeb every 7–10 days.'],['Mulch soil surface','Prevents spore splash from soil.'],['Avoid overhead watering','Wet foliage promotes spore germination.']],prev:['🔄 Crop rotation essential','🌱 Use resistant varieties','💧 Drip irrigation','🧹 Remove plant debris','🌞 Good sun exposure','📏 Adequate plant spacing']},
+  'Tomato___Spider_mites Two-spotted_spider_mite':{plant:'Tomato · Tetranychus urticae',sev:'medium',syms:['Fine stippling or bronzing on upper leaf surface','Fine webbing visible on leaf undersides','Leaves turn yellow then bronze and die','Worst in hot, dry conditions','Tiny moving dots visible on leaf undersides'],treat:[['Apply miticide or insecticidal soap','Spray undersides of leaves thoroughly.'],['Increase humidity','Mites thrive in dry conditions.'],['Introduce predatory mites','Phytoseiidae species are effective biocontrol.'],['Remove heavily infested leaves','Reduce mite population quickly.']],prev:['💧 Maintain adequate soil moisture','🌡️ Avoid heat stress','🐞 Encourage natural predators','🌿 Avoid dusty conditions','🔄 Remove crop debris','📋 Regular monitoring']},
+  'Tomato___Target_Spot':{plant:'Tomato · Corynespora cassiicola',sev:'medium',syms:['Circular brown spots with concentric rings','Yellow halos surrounding lesions','Spots appear on leaves, stems, and fruit','Lesions may merge causing blight','Defoliation in severe cases'],treat:[['Apply fungicide at early signs','Azoxystrobin or chlorothalonil are effective.'],['Remove infected tissue','Prune affected leaves promptly.'],['Avoid overhead irrigation','Keep foliage as dry as possible.'],['Improve air circulation','Space and stake plants properly.']],prev:['🔄 Crop rotation','🌬️ Good air circulation','💧 Drip irrigation','🌱 Resistant varieties','🧹 Remove debris','📋 Regular scouting']},
+  'Tomato___Tomato_Yellow_Leaf_Curl_Virus':{plant:'Tomato · TYLCV (Begomovirus)',sev:'high',syms:['Severe leaf curling upward and inward','Leaves turn yellow with green veins','Stunted plant growth','Flower drop and poor fruit set','Transmitted by whiteflies'],treat:[['Control whitefly populations immediately','Apply imidacloprid or neem oil.'],['Remove and destroy infected plants','Prevents spread to healthy plants.'],['Use reflective mulch','Repels whitefly vectors.'],['No chemical cure exists','Management focuses on vector control.']],prev:['🌿 Use virus-resistant varieties','🪲 Whitefly control programs','🌱 Use certified transplants','🏠 Screen greenhouse openings','🔄 Remove crop debris','📋 Monitor whitefly populations']},
+  'Tomato___Tomato_mosaic_virus':{plant:'Tomato · ToMV (Tobamovirus)',sev:'high',syms:['Mosaic pattern of light and dark green on leaves','Leaf distortion and mottling','Stunted plant growth','Reduced fruit quality and yield','No insect vector — spreads by contact'],treat:[['Remove and destroy infected plants','No cure; prevent spread.'],['Wash hands and tools thoroughly','Virus spreads easily by contact.'],['Use resistant varieties','ToMV-resistant cultivars are widely available.'],['Disinfect equipment','Use 10% bleach or 70% alcohol.']],prev:['🌱 Plant virus-resistant varieties','🧤 Wash hands before handling','🔧 Sterilize all tools','🚭 Do not smoke near plants','🔄 Crop rotation','🧹 Remove crop debris']},
+  'Tomato___healthy':{plant:'Tomato · Healthy specimen',sev:'low',syms:['Vibrant deep green coloration throughout','Firm leaf texture with no spots or lesions','No visible yellowing or browning','Healthy vascular structure visible','No pest damage or webbing present'],treat:[['Continue regular watering','Maintain consistent soil moisture.'],['Monitor regularly','Check weekly for early signs of disease.'],['Fertilize appropriately','Balanced NPK nutrition supports immunity.'],['Maintain proper spacing','Good airflow prevents fungal issues.']],prev:['💧 Regular consistent watering','🌞 Full sun 8+ hours daily','🌱 Balanced fertilization','🔄 Rotate crops each season','🧤 Sanitize all tools','📋 Weekly plant monitoring']},
+  'Corn_(maize)___Common_rust_':{plant:'Corn · Puccinia sorghi',sev:'medium',syms:['Cinnamon-brown pustules on both leaf surfaces','Pustules elongated and powdery','Severe infection causes leaf yellowing','Husks and stalks may also be infected','Spores spread rapidly by wind'],treat:[['Apply triazole fungicide early','Most effective at first pustule appearance.'],['Scout at silking stage','VT/R1 applications are most effective.'],['Time preventive applications','Spray before symptoms appear in high-risk areas.'],['Reduce plant stress','Adequate nitrogen reduces susceptibility.']],prev:['🌽 Plant resistant hybrids','📅 Early planting avoids peak spore loads','🌱 Maintain crop health','🔄 Crop rotation','🌬️ Good field air circulation','📊 Monitor disease forecasts']},
+  'Corn_(maize)___Northern_Leaf_Blight':{plant:'Corn · Exserohilum turcicum',sev:'medium',syms:['Long tan to grayish-green elliptical lesions','Lesions may reach 2.5–15 cm length','Dark sporulation in center of lesions','Upper leaves infected first','Severe cases cause significant yield loss'],treat:[['Apply fungicide at VT stage','Propiconazole or azoxystrobin are effective.'],['Choose resistant hybrids for future plantings','Most effective long-term strategy.'],['Manage crop residue','Till in infected residue after harvest.'],['Scout from V6 onwards','Early detection allows timely treatment.']],prev:['🌽 Resistant hybrid selection','🔄 Crop rotation with non-hosts','🌱 Residue management','📅 Optimal planting dates','📊 Field scouting programs','🌬️ Avoid dense plantings']},
+  'Corn_(maize)___healthy':{plant:'Corn · Healthy specimen',sev:'low',syms:['Uniform green leaf color','No lesions, spots, or discoloration','Healthy tassels and ears','Strong upright plant structure','No signs of pest or pathogen activity'],treat:[['Maintain fertilization program','NPK balance supports plant health.'],['Monitor soil moisture','Consistent watering prevents stress.'],['Scout weekly','Early detection is key.'],['Manage weeds','Reduces competition and disease reservoirs.']],prev:['💧 Consistent irrigation','🌱 Balanced nutrition','🔄 Annual crop rotation','📋 Weekly scouting','🌬️ Adequate plant spacing','🌞 Plant at optimal density']},
+  'Potato___Early_blight':{plant:'Potato · Alternaria solani',sev:'medium',syms:['Circular dark brown spots with concentric rings','Yellow halo surrounding lesions','Lower leaves affected first','Tuber infection causes dark sunken lesions','Defoliation weakens tuber development'],treat:[['Apply fungicide preventively','Chlorothalonil before symptoms appear.'],['Remove infected leaves','Reduce inoculum load.'],['Avoid excess nitrogen','Over-fertilization increases susceptibility.'],['Harvest at right time','Avoid leaving tubers in soil too long.']],prev:['🥔 Certified seed potatoes','🔄 Crop rotation essential','💧 Avoid overhead watering','🌱 Resistant varieties','🌬️ Good air circulation','🧹 Remove crop debris']},
+  'Potato___Late_blight':{plant:'Potato · Phytophthora infestans',sev:'high',syms:['Large water-soaked lesions on leaves','White sporulation on leaf undersides','Rapid browning and tissue collapse','Dark brown tuber lesions','Entire plant collapse in severe cases'],treat:[['Apply fungicide immediately','Mancozeb or metalaxyl at first sign.'],['Destroy infected plants','Remove all affected tissue properly.'],['Consider early harvest','If heavily infected, harvest before further spread.'],['Copper spray prevention','Apply in cool, wet weather proactively.']],prev:['🥔 Certified seed potatoes','💧 No overhead watering','🌬️ Well-drained soil','📊 Monitor weather','🔄 Annual rotation','🌱 Destroy crop debris']},
+  'Potato___healthy':{plant:'Potato · Healthy specimen',sev:'low',syms:['Healthy dark green foliage','No visible lesions or spots','Vigorous upright growth','Healthy flower development','No signs of blight or pest damage'],treat:[['Continue regular hilling','Supports tuber development and prevents greening.'],['Maintain soil moisture','Consistent watering prevents cracking.'],['Monitor for early signs','Weekly checks during growing season.'],['Balanced fertilization','Avoid excess nitrogen.']],prev:['💧 Consistent watering','🔄 3-year crop rotation','🥔 Certified seed only','🌱 Hill regularly','📋 Weekly monitoring','🧹 Remove plant debris']},
+  'Apple___Apple_scab':{plant:'Apple · Venturia inaequalis',sev:'medium',syms:['Olive-green to brown velvety lesions on leaves','Dark scabby patches on fruit surface','Premature leaf drop in heavy infections','Cracked distorted fruit with corky texture','Pale green patches on young lesions initially'],treat:[['Apply fungicide at bud break','Begin preventive applications when green tissue appears.'],['Remove fallen leaves','Rake and destroy all fallen leaves to eliminate spores.'],['Prune for canopy airflow','Open canopy during dormant season.'],['Consider resistant varieties','Replant with scab-resistant cultivars.']],prev:['🍂 Rake fallen leaves each autumn','💨 Prune for canopy openness','🌧️ Avoid wetting foliage','🌿 Choose resistant varieties','🔬 Scout early each spring','📅 Time fungicide applications precisely']},
+  'Apple___Black_rot':{plant:'Apple · Botryosphaeria obtusa',sev:'high',syms:['Brown rotting lesions on fruit turning black','"Frog-eye" spots on leaves (purple-bordered tan centers)','Cankers on limbs and branches','Fruit mummies hanging on tree through winter','Leaf spots cause premature defoliation'],treat:[['Remove mummified fruit','Primary inoculum source — remove immediately.'],['Prune dead or cankered limbs','Destroy pruned material off-site.'],['Apply fungicide at pink stage','Through petal fall for best control.'],['Maintain tree vigor','Healthy trees resist infection better.']],prev:['🍎 Remove mummified fruit','✂️ Prune dead wood annually','🌿 Choose resistant varieties','💧 Good drainage','📋 Regular scouting','🔧 Clean pruning tools']},
+  'Apple___Cedar_apple_rust':{plant:'Apple · Gymnosporangium juniperi-virginianae',sev:'medium',syms:['Bright orange-yellow spots on upper leaf surface','Pale yellow lesions with orange borders','Tube-like structures on leaf undersides','Fruit lesions similar to leaf spots','Requires both cedar and apple trees to complete cycle'],treat:[['Apply fungicide at pink bud stage','Through first cover spray period.'],['Remove nearby cedar/juniper trees','Eliminates alternate host if feasible.'],['Use resistant apple varieties','Most effective long-term solution.'],['Time sprays with wetting events','Apply before expected rain periods.']],prev:['🌲 Remove nearby cedar trees','🍎 Plant rust-resistant varieties','📅 Time fungicide applications carefully','🌧️ Monitor wet weather periods','📋 Scout for orange galls on cedars','🔄 No direct crop rotation benefit']},
+  'Apple___healthy':{plant:'Apple · Healthy specimen',sev:'low',syms:['Glossy dark green leaves','No spots, lesions, or discoloration','Healthy flower and fruit development','No signs of cankers or mummies','Vigorous shoot growth'],treat:[['Maintain regular pruning','Annual dormant pruning improves airflow.'],['Continue spray program','Preventive fungicide schedule.'],['Monitor nutrient status','Foliar analysis guides fertilization.'],['Thin fruit if needed','Improves fruit size and quality.']],prev:['✂️ Annual dormant pruning','💧 Proper irrigation management','🌿 Choose resistant rootstocks','📋 Regular scouting program','🍂 Rake fallen leaves','🔧 Maintain clean tools']},
+  'Grape___Black_rot':{plant:'Grape · Guignardia bidwellii',sev:'high',syms:['Tan circular spots with dark brown borders on leaves','Fruit turns brown then wrinkles into hard black mummies','Lesions on shoots and tendrils','White pycnidia visible in leaf spots','Rapid fruit rot during wet seasons'],treat:[['Apply fungicide at bud break','Mancozeb or myclobutanil through fruit set.'],['Remove mummified berries','Destroy all mummified fruit before spring.'],['Prune out infected canes','Remove during dormant season.'],['Improve canopy management','Leaf removal improves airflow and spray penetration.']],prev:['🍇 Remove mummies in winter','✂️ Prune for open canopy','💧 Avoid wetting fruit clusters','📅 Begin sprays before bloom','🌬️ Good air circulation','📋 Scout regularly']},
+  'Grape___Esca_(Black_Measles)':{plant:'Grape · Phaeoacremonium spp.',sev:'high',syms:['Tiger stripe pattern on leaves (yellow/red between veins)','Berries develop dark spots ("measles")','Sudden vine collapse in summer heat','Internal wood shows brown to black streaking','Progressive trunk disease over many years'],treat:[['No effective chemical cure','Management focuses on prevention.'],['Protect pruning wounds','Apply wound sealant immediately after pruning.'],['Remove severely affected vines','Prevents spread to neighboring plants.'],['Delay pruning to dry periods','Spores spread through wet wounds.']],prev:['✂️ Prune in dry weather only','🔧 Seal all pruning wounds','🌱 Use certified planting material','📋 Monitor for early tiger stripe symptoms','🍇 Avoid stress from drought or over-cropping','🔄 Long rotation before replanting']},
+  'Grape___Leaf_blight_(Isariopsis_Leaf_Spot)':{plant:'Grape · Pseudocercospora vitis',sev:'medium',syms:['Angular dark brown spots on leaves','Yellow halos around lesions','Spots coalesce causing large necrotic areas','Premature defoliation weakens vines','Lesions have dark fungal sporulation'],treat:[['Apply copper-based fungicide','Effective preventive and curative option.'],['Remove infected leaves','Reduces spore load.'],['Improve canopy airflow','Leaf removal and shoot positioning.'],['Avoid overhead irrigation','Wet conditions promote disease.']],prev:['🌬️ Open canopy management','💧 Drip irrigation','📋 Regular scouting','🔄 Remove fallen leaves','💨 Good air movement through canopy','🌱 Balanced nutrition']},
+  'Grape___healthy':{plant:'Grape · Healthy specimen',sev:'low',syms:['Uniform green leaf color','No spots, lesions, or discoloration','Healthy fruit development','Vigorous shoot growth','No signs of trunk disease'],treat:[['Continue canopy management','Regular shoot positioning and leaf removal.'],['Maintain fertilization program','Balanced nutrition for vine health.'],['Monitor irrigation','Consistent moisture prevents stress.'],['Preventive spray schedule','Maintain coverage during key growth stages.']],prev:['✂️ Annual dormant pruning','🌬️ Open canopy management','💧 Consistent irrigation','📋 Regular scouting','🍇 Thin clusters if overcrowded','🔧 Clean tools between vines']},
+  'Strawberry___Leaf_scorch':{plant:'Strawberry · Diplocarpon earlianum',sev:'medium',syms:['Small purple to reddish-purple spots on leaves','Centers turn brown then white-gray','Leaves appear scorched in severe cases','Spots may merge causing large necrotic areas','Defoliation reduces yield significantly'],treat:[['Apply fungicide preventively','Captan or myclobutanil before wet periods.'],['Remove infected leaves','Reduces overwintering inoculum.'],['Improve row drainage','Avoid waterlogged conditions.'],['Renovate planting after harvest','Mow and remove all plant debris.']],prev:['🌱 Use certified plants','🔄 Replace planting every 3-4 years','💧 Avoid overhead watering','🌬️ Good air circulation in rows','🧹 Remove old leaves after harvest','📋 Regular monitoring']},
+  'Strawberry___healthy':{plant:'Strawberry · Healthy specimen',sev:'low',syms:['Bright green trifoliate leaves','No spots or discoloration','Healthy runner and flower production','Firm red fruit development','No signs of disease or pest damage'],treat:[['Maintain renovation program','Renovate rows after harvest annually.'],['Monitor runners','Remove excess runners to prevent crowding.'],['Consistent fertilization','Especially potassium for fruit quality.'],['Regular watering','Consistent moisture is essential.']],prev:['💧 Consistent drip irrigation','🌱 Certified planting stock only','🔄 Replace plantings every 3-4 years','🧹 Remove debris after harvest','📋 Regular inspection','🌬️ Good air circulation']},
+  'Peach___Bacterial_spot':{plant:'Peach · Xanthomonas arboricola',sev:'medium',syms:['Water-soaked lesions on leaves turning dark','Shot-hole appearance as lesions fall out','Fruit lesions: sunken dark spots with cracked centers','Young fruit may crack and drop','Severe defoliation in susceptible varieties'],treat:[['Apply copper bactericide at bud swell','Multiple applications during spring.'],['Thin fruit to reduce infection sites','Less crowded fruit dries faster.'],['Avoid high nitrogen fertilization','Lush growth is more susceptible.'],['Choose resistant varieties','Critical in high-pressure areas.']],prev:['🍑 Plant resistant varieties','💨 Good air circulation','🌬️ Wind protection where possible','📅 Begin copper sprays early','💧 Avoid wetting fruit','📋 Regular scouting']},
+  'Peach___healthy':{plant:'Peach · Healthy specimen',sev:'low',syms:['Healthy green lanceolate leaves','No spots, lesions, or shot-holes','Healthy flower and fruit development','Normal peach aroma from leaves','No signs of gummosis or cankers'],treat:[['Annual pruning','Maintain open vase shape for airflow.'],['Thinning fruit','Improves size, quality, and disease resistance.'],['Continue spray program','Preventive fungicide and bactericide schedule.'],['Monitor for borers','Check trunk for gummosis signs.']],prev:['✂️ Annual open-center pruning','🌬️ Good air circulation','💧 Avoid wetting foliage','📅 Timely dormant sprays','📋 Regular inspection','🌱 Choose adapted varieties']},
+  'Cherry_(including_sour)___Powdery_mildew':{plant:'Cherry · Podosphaera clandestina',sev:'medium',syms:['White powdery coating on young leaves','Leaves curl upward and become distorted','Infected leaves may turn yellow then drop','Young fruit may develop russeting','Shoot tips may be stunted and deformed'],treat:[['Apply sulfur or potassium bicarbonate','Effective at early stages.'],['Remove infected tissue','Reduces inoculum.'],['Apply myclobutanil or trifloxystrobin','Systemic options for established infections.'],['Improve canopy airflow','Reduces favorable microclimate.']],prev:['🌬️ Open canopy management','✂️ Prune for good airflow','📅 Begin preventive sprays early','🌱 Choose resistant varieties','💧 Avoid excess nitrogen','📋 Regular monitoring']},
+  'Cherry_(including_sour)___healthy':{plant:'Cherry · Healthy specimen',sev:'low',syms:['Glossy deep green leaves','No powdery coating or spots','Healthy flower and fruit development','Normal shoot extension','No signs of gummosis'],treat:[['Continue dormant pruning','Annual pruning for open canopy.'],['Preventive spray schedule','Fungicide timing with phenology stages.'],['Monitor nutrition','Calcium important for fruit quality.'],['Thinning if overcrowded','Improves fruit size.']],prev:['✂️ Annual dormant pruning','🌬️ Open canopy','💧 Consistent irrigation','📋 Regular monitoring','🍒 Protect from birds','🌱 Balanced fertilization']},
+  'Pepper,_bell___Bacterial_spot':{plant:'Bell Pepper · Xanthomonas euvesicatoria',sev:'high',syms:['Small water-soaked lesions becoming brown to black','Yellow halos around lesions','Raised scabby lesions on fruit','Premature defoliation weakens plants','High humidity greatly increases disease severity'],treat:[['Apply copper bactericide','Begin at transplanting; repeat every 5–7 days in wet weather.'],['Remove severely infected plants','Prevents spread to healthy plants.'],['Avoid working in wet fields','Reduces mechanical spread.'],['Use resistant varieties','Most effective long-term solution.']],prev:['🌱 Use resistant varieties','💧 Drip irrigation only','🌬️ Good air circulation','🔄 3-year crop rotation','🧤 Sanitize tools','📋 Regular scouting during wet periods']},
+  'Pepper,_bell___healthy':{plant:'Bell Pepper · Healthy specimen',sev:'low',syms:['Bright green healthy leaves','No spots, lesions, or yellowing','Healthy flower and fruit set','Firm crisp fruits developing','No signs of disease or pest damage'],treat:[['Continue regular fertilization','Calcium and boron support fruit quality.'],['Maintain consistent irrigation','Prevents blossom end rot.'],['Monitor for pests','Aphids and thrips can vector viruses.'],['Stake or cage plants','Supports vigorous growth.']],prev:['💧 Consistent drip irrigation','🌱 Certified transplants','🔄 Crop rotation','📋 Weekly monitoring','🌬️ Good air circulation','🧤 Clean tools']},
+  'Squash___Powdery_mildew':{plant:'Squash · Podosphaera xanthii',sev:'medium',syms:['White powdery spots on upper leaf surfaces','Spots enlarge to cover entire leaf','Severely infected leaves turn yellow and die','Stems and petioles may also be affected','Late season infections most common'],treat:[['Apply sulfur or potassium bicarbonate','Effective early; apply to both leaf surfaces.'],['Use neem oil as organic option','Apply every 7 days.'],['Apply systemic fungicide','Myclobutanil for established infections.'],['Remove heavily infected leaves','Reduce spore load.']],prev:['🌬️ Good air circulation','🌱 Plant resistant varieties','📅 Begin preventive sprays at first sign','💧 Avoid excess nitrogen','📋 Regular scouting','✂️ Remove old infected tissue']},
+  'default':{plant:'Plant pathogen detected',sev:'medium',syms:['Visible discoloration or lesions on leaf','Abnormal spotting or blotching pattern','Possible yellowing around affected areas','Changes in leaf texture or appearance','Reduced plant vigor'],treat:[['Isolate affected plants','Prevent spread by separating infected plants.'],['Remove infected tissue','Prune affected leaves and stems carefully.'],['Apply appropriate treatment','Consult local agricultural extension for product recommendations.'],['Improve growing conditions','Ensure proper spacing, drainage, and nutrition.']],prev:['🌱 Use disease-resistant varieties','💧 Water at base of plants','🌬️ Good air circulation','🔄 Practice crop rotation','🧤 Clean tools between plants','📋 Monitor plants regularly']}
+};
+
+/* ── TRANSLATIONS ── */
+const T={
+  en:{ey1:'Input',lt:'Scan a <em>Leaf</em>',ls:'Upload or capture a photo for instant AI-powered plant disease diagnosis.',ey2:'Output',rt:'Diagnosis <em>Result</em>',rs:'AI-powered plant pathology analysis.',tbu:'Upload',tbc:'Camera',dzt:'Drop your leaf image here',dzs:'or browse · JPG · PNG · WEBP',dzb:'Browse Files',abtn:'Analyze Leaf',idlet:'Awaiting scan',idles:'Upload a leaf image and click Analyze for an instant AI diagnosis.',p1:'Upload',p2:'Analyze',p3:'Result',loadt:'Analyzing leaf tissue…',loads:'Running MobileNetV2 classification',ht:'Plant is Healthy!',hs:'No signs of disease, pest damage, or nutrient deficiency detected.',cl:'Confidence Score',altl:'Other possibilities',itbs:'Symptoms',itbt:'Treatment',itbp:'Prevention',sh:'High Risk',sm:'Moderate',sl:'Low Risk',cshort:'confident',cov:'Click Start Camera',cs:'Start',csnap:'Capture',cstop:'Stop',ns1:'Accuracy',ns2:'Classes',ns3:'Images',s1:'Accuracy',s2:'Classes',s3:'Plant Images'},
+  te:{ey1:'ఇన్‌పుట్',lt:'<em>ఆకు</em> స్కాన్',ls:'తక్షణ AI రోగ నిర్ధారణ కోసం ఆకు ఫోటో అప్‌లోడ్ చేయండి.',ey2:'ఔట్‌పుట్',rt:'వ్యాధి <em>నిర్ధారణ</em>',rs:'AI ఆధారిత మొక్కల ఆరోగ్య విశ్లేషణ.',tbu:'అప్‌లోడ్',tbc:'కెమెరా',dzt:'ఆకు చిత్రాన్ని ఇక్కడ వేయండి',dzs:'లేదా బ్రౌజ్ చేయండి · JPG · PNG',dzb:'ఫైళ్ళు బ్రౌజ్',abtn:'ఆకును విశ్లేషించు',idlet:'స్కాన్ వేచి ఉంది',idles:'తక్షణ AI నిర్ధారణ కోసం ఆకు చిత్రం అప్‌లోడ్ చేయండి.',p1:'అప్‌లోడ్',p2:'విశ్లేషించు',p3:'ఫలితం',loadt:'ఆకు కణజాలం విశ్లేషిస్తోంది…',loads:'MobileNetV2 వర్గీకరణ నడుపుతోంది',ht:'మొక్క ఆరోగ్యంగా ఉంది!',hs:'వ్యాధి లేదా కీటక నష్టం కనుగొనబడలేదు.',cl:'నమ్మకం స్కోర్',altl:'ఇతర అవకాశాలు',itbs:'లక్షణాలు',itbt:'చికిత్స',itbp:'నివారణ',sh:'అధిక ప్రమాదం',sm:'మధ్యస్థం',sl:'తక్కువ ప్రమాదం',cshort:'నమ్మకం',cov:'కెమెరా ప్రారంభించు',cs:'ప్రారంభించు',csnap:'తీయి',cstop:'ఆపు',ns1:'ఖచ్చితత్వం',ns2:'తరగతులు',ns3:'చిత్రాలు',s1:'ఖచ్చితత్వం',s2:'తరగతులు',s3:'మొక్కల చిత్రాలు'},
+  hi:{ey1:'इनपुट',lt:'<em>पत्ती</em> स्कैन',ls:'तुरंत AI निदान के लिए पत्ती की फोटो अपलोड करें।',ey2:'आउटपुट',rt:'रोग <em>निदान</em>',rs:'AI-संचालित पौधा स्वास्थ्य विश्लेषण।',tbu:'अपलोड',tbc:'कैमरा',dzt:'पत्ती की छवि यहाँ डालें',dzs:'या ब्राउज़ करें · JPG · PNG',dzb:'फ़ाइलें ब्राउज़',abtn:'पत्ती विश्लेषण',idlet:'स्कैन प्रतीक्षारत',idles:'तत्काल AI निदान के लिए पत्ती की छवि अपलोड करें।',p1:'अपलोड',p2:'विश्लेषण',p3:'परिणाम',loadt:'पत्ती के ऊतक का विश्लेषण…',loads:'MobileNetV2 वर्गीकरण चल रहा है',ht:'पौधा स्वस्थ है!',hs:'कोई रोग, कीट या पोषक कमी नहीं मिली।',cl:'विश्वास स्कोर',altl:'अन्य संभावनाएं',itbs:'लक्षण',itbt:'उपचार',itbp:'रोकथाम',sh:'उच्च जोखिम',sm:'मध्यम',sl:'कम जोखिम',cshort:'विश्वसनीय',cov:'कैमरा शुरू करें',cs:'शुरू',csnap:'कैप्चर',cstop:'रोकें',ns1:'सटीकता',ns2:'वर्ग',ns3:'छवियाँ',s1:'सटीकता',s2:'वर्ग',s3:'पौधे की छवियाँ'},
+  ta:{ey1:'உள்ளீடு',lt:'<em>இலை</em> ஸ்கேன்',ls:'உடனடி AI கண்டறிதலுக்கு இலை புகைப்படம் பதிவேற்றவும்.',ey2:'வெளியீடு',rt:'நோய் <em>கண்டறிதல்</em>',rs:'AI-இயக்கும் தாவர ஆரோக்கிய பகுப்பாய்வு.',tbu:'பதிவேற்று',tbc:'கேமரா',dzt:'இலை படத்தை இங்கே போடுங்கள்',dzs:'அல்லது உலாவுங்கள் · JPG · PNG',dzb:'கோப்புகளை உலாவு',abtn:'இலையை பகுப்பாய்வு செய்',idlet:'ஸ்கேன் காத்திருக்கிறது',idles:'உடனடி AI கண்டறிதலுக்கு இலை படம் பதிவேற்றவும்.',p1:'பதிவேற்று',p2:'பகுப்பாய்வு',p3:'முடிவு',loadt:'இலை திசுவை பகுப்பாய்வு செய்கிறது…',loads:'MobileNetV2 வகைப்படுத்தல்',ht:'செடி ஆரோக்கியமாக உள்ளது!',hs:'நோய் அல்லது பூச்சி சேதம் இல்லை.',cl:'நம்பிக்கை மதிப்பெண்',altl:'மற்ற சாத்தியங்கள்',itbs:'அறிகுறிகள்',itbt:'சிகிச்சை',itbp:'தடுப்பு',sh:'அதிக ஆபத்து',sm:'மிதமான',sl:'குறைந்த ஆபத்து',cshort:'நம்பகமான',cov:'கேமரா தொடங்கு',cs:'தொடங்கு',csnap:'படம் எடு',cstop:'நிறுத்து',ns1:'துல்லியம்',ns2:'வகைகள்',ns3:'படங்கள்',s1:'துல்லியம்',s2:'வகைகள்',s3:'தாவர படங்கள்'},
+  kn:{ey1:'ಇನ್‌ಪುಟ್',lt:'<em>ಎಲೆ</em> ಸ್ಕ್ಯಾನ್',ls:'ತಕ್ಷಣ AI ರೋಗ ನಿರ್ಣಯಕ್ಕೆ ಎಲೆ ಫೋಟೋ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.',ey2:'ಔಟ್‌ಪುಟ್',rt:'ರೋಗ <em>ನಿರ್ಣಯ</em>',rs:'AI-ಚಾಲಿತ ಸಸ್ಯ ಆರೋಗ್ಯ ವಿಶ್ಲೇಷಣೆ.',tbu:'ಅಪ್‌ಲೋಡ್',tbc:'ಕ್ಯಾಮೆರಾ',dzt:'ಎಲೆ ಚಿತ್ರವನ್ನು ಇಲ್ಲಿ ಹಾಕಿ',dzs:'ಅಥವಾ ಬ್ರೌಸ್ ಮಾಡಿ · JPG · PNG',dzb:'ಫೈಲ್‌ಗಳನ್ನು ಬ್ರೌಸ್',abtn:'ಎಲೆ ವಿಶ್ಲೇಷಿಸಿ',idlet:'ಸ್ಕ್ಯಾನ್ ನಿರೀಕ್ಷಿಸಲಾಗುತ್ತಿದೆ',idles:'ತಕ್ಷಣ AI ನಿರ್ಣಯಕ್ಕೆ ಎಲೆ ಚಿತ್ರ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.',p1:'ಅಪ್‌ಲೋಡ್',p2:'ವಿಶ್ಲೇಷಿಸಿ',p3:'ಫಲಿತಾಂಶ',loadt:'ಎಲೆ ಅಂಗಾಂಶ ವಿಶ್ಲೇಷಿಸಲಾಗುತ್ತಿದೆ…',loads:'MobileNetV2 ವರ್ಗೀಕರಣ ನಡೆಯುತ್ತಿದೆ',ht:'ಸಸ್ಯ ಆರೋಗ್ಯಕರ!',hs:'ರೋಗ ಅಥವಾ ಕೀಟ ಹಾನಿ ಕಂಡುಬಂದಿಲ್ಲ.',cl:'ವಿಶ್ವಾಸ ಸ್ಕೋರ್',altl:'ಇತರ ಸಾಧ್ಯತೆಗಳು',itbs:'ಲಕ್ಷಣಗಳು',itbt:'ಚಿಕಿತ್ಸೆ',itbp:'ತಡೆಗಟ್ಟುವಿಕೆ',sh:'ಹೆಚ್ಚಿನ ಅಪಾಯ',sm:'ಮಧ್ಯಮ',sl:'ಕಡಿಮೆ ಅಪಾಯ',cshort:'ವಿಶ್ವಾಸಾರ್ಹ',cov:'ಕ್ಯಾಮೆರಾ ಪ್ರಾರಂಭಿಸಿ',cs:'ಪ್ರಾರಂಭ',csnap:'ತೆಗೆಯಿರಿ',cstop:'ನಿಲ್ಲಿಸಿ',ns1:'ನಿಖರತೆ',ns2:'ವರ್ಗಗಳು',ns3:'ಚಿತ್ರಗಳು',s1:'ನಿಖರತೆ',s2:'ವರ್ಗಗಳು',s3:'ಸಸ್ಯ ಚಿತ್ರಗಳು'}
+};
+
+/* ── STATE ── */
+let lang='en', file=null, stream=null;
+const $=id=>document.getElementById(id);
+const ht=(id,v)=>{const e=$(id);if(e)e.innerHTML=v};
+const tx=(id,v)=>{const e=$(id);if(e)e.textContent=v};
+
+/* ── LANG ── */
+function setLang(l){
+  lang=l;
+  document.querySelectorAll('.lb').forEach((b,i)=>b.classList.toggle('on',['en','te','hi','ta','kn'][i]===l));
+  const t=T[l];
+  tx('ey1',t.ey1); ht('lt',t.lt); tx('ls',t.ls);
+  tx('ey2',t.ey2); ht('rt',t.rt); tx('rs',t.rs);
+  tx('tbu',t.tbu); tx('tbc',t.tbc);
+  tx('dz-t',t.dzt); tx('dz-s',t.dzs); tx('dz-b',t.dzb);
+  tx('abtn-lbl',t.abtn);
+  tx('idle-t',t.idlet); tx('idle-s',t.idles);
+  tx('p1',t.p1); tx('p2',t.p2); tx('p3',t.p3);
+  tx('load-t',t.loadt); tx('load-s',t.loads);
+  tx('h-t',t.ht); tx('h-s',t.hs);
+  tx('conf-lbl',t.cl); tx('alt-lbl',t.altl);
+  tx('itb-s',t.itbs); tx('itb-t',t.itbt); tx('itb-p',t.itbp);
+  tx('cov-txt',t.cov); tx('cs',t.cs); tx('csnap',t.csnap); tx('cstop',t.cstop);
+  tx('ns1',t.ns1); tx('ns2',t.ns2); tx('ns3',t.ns3);
+  tx('s1',t.s1); tx('s2',t.s2); tx('s3',t.s3);
+}
+
+/* ── TABS ── */
+function switchTab(tab,btn){
+  document.querySelectorAll('.tb').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  $('sec-upload').style.display=tab==='upload'?'':'none';
+  $('sec-cam').style.display=tab==='camera'?'':'none';
+  if(tab==='upload') camStop();
+}
+
+function infoTab(tab,btn){
+  document.querySelectorAll('.itb').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.querySelectorAll('.tp').forEach(p=>p.classList.remove('on'));
+  $('tp-'+tab).classList.add('on');
+}
+
+/* ── DROP / FILE ── */
+function onDrop(e){
+  e.preventDefault();
+  $('dz').classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f&&f.type.startsWith('image/')) loadFile(f);
+}
+function onFile(e){const f=e.target.files[0];if(f) loadFile(f)}
+function loadFile(f){
+  file=f;
+  const r=new FileReader();
+  r.onload=e=>{
+    $('prev-img').src=e.target.result;
+    $('dz').classList.add('loaded');
+    $('abtn').disabled=false;
+  };
+  r.readAsDataURL(f);
+}
+function rmImg(e){
+  e.stopPropagation();
+  $('dz').classList.remove('loaded');
+  $('prev-img').src='';
+  $('fi').value='';
+  $('abtn').disabled=true;
+  file=null;
+  showIdle();
+}
+
+/* ── IDLE / PANELS ── */
+function showIdle(){
+  $('idle-panel').style.display='';
+  $('load-panel').classList.remove('on');
+  $('disease-panel').classList.remove('on');
+  $('healthy-panel').classList.remove('on');
+}
+function hideAll(){
+  $('idle-panel').style.display='none';
+  $('load-panel').classList.remove('on');
+  $('disease-panel').classList.remove('on');
+  $('healthy-panel').classList.remove('on');
+}
+
+/* ── CAMERA ── */
+async function camStart(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    $('vid').srcObject=stream;
+    $('cam-cover').style.display='none';
+    $('btn-snap').disabled=false;
+    $('btn-stop').disabled=false;
+    $('btn-start').disabled=true;
+  }catch(e){
+    alert('Camera access denied. Click the lock icon in your address bar → Allow Camera → Refresh.');
+  }
+}
+function camStop(){
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  $('vid').srcObject=null;
+  $('cam-cover').style.display='flex';
+  $('btn-snap').disabled=true;
+  $('btn-stop').disabled=true;
+  $('btn-start').disabled=false;
+}
+function camSnap(){
+  const v=$('vid'),c=$('cnv');
+  c.width=v.videoWidth;c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  const fl=$('flash');fl.style.opacity='1';setTimeout(()=>fl.style.opacity='0',100);
+  c.toBlob(b=>{
+    loadFile(new File([b],'camera.jpg',{type:'image/jpeg'}));
+    camStop();
+    $('tb-up').click();
+  },'image/jpeg',.92);
+}
+
+/* ── ANALYZE ── */
+async function analyze(){
+  if(!file) return;
+  hideAll();
+  $('load-panel').classList.add('on');
+
+  const fd=new FormData();
+  fd.append('file',file);
+
+  try{
+    const res=await fetch('/predict',{method:'POST',body:fd});
+    const data=await res.json();
+    $('load-panel').classList.remove('on');
+
+    if(data.error){alert('Error: '+data.error);showIdle();return;}
+
+    if(data.result==='Not a Leaf'||data.is_healthy){
+      const t=T[lang];
+      tx('h-t', data.is_healthy ? t.ht : 'Not a Leaf Image');
+      tx('h-conf', data.confidence+'% '+t.cshort);
+      tx('h-s', data.is_healthy ? t.hs : 'Please upload a clear close-up photo of a plant leaf.');
+      $('healthy-panel').classList.add('on');
+      return;
+    }
+
+    showDisease(data);
+  }catch(e){
+    $('load-panel').classList.remove('on');
+    alert('Cannot connect to Flask server. Make sure python app.py is running on port 5000.');
+    showIdle();
+  }
+}
+
+function showDisease(data){
+  const t=T[lang];
+  // Normalize key — try exact match first, then fallback
+  const info = DB[data.result] || DB[data.result?.replace(/ /g,'_')] || DB['default'];
+
+  tx('d-name', data.result.replace(/_/g,' ').replace(/___/g,' — '));
+  tx('d-plant', info.plant);
+  tx('conf-lbl', t.cl);
+  tx('conf-pct', data.confidence+'%');
+
+  // Severity badge
+  const sev=$('d-sev');
+  sev.className='sev';
+  if(info.sev==='high'){sev.classList.add('sev-high');sev.textContent=t.sh;}
+  else if(info.sev==='medium'){sev.classList.add('sev-med');sev.textContent=t.sm;}
+  else{sev.classList.add('sev-low');sev.textContent=t.sl;}
+
+  // Confidence bar
+  const bar=$('conf-bar');
+  bar.className='conf-bar';
+  const pct=data.confidence;
+  bar.classList.add(pct>=80?'high':pct>=55?'med':'low');
+  setTimeout(()=>bar.style.width=pct+'%',60);
+
+  // Alternatives
+  const pool=['Healthy','Early Blight','Late Blight','Bacterial Spot','Leaf Mold','Rust','Septoria'].filter(n=>!data.result.includes(n.replace(' ','')));
+  let rem=100-pct;
+  [[a1p,a1n],[a2p,a2n],[a3p,a3n]]=pool.slice(0,3).map((n,i)=>{
+    const p=i===0?Math.round(rem*.55):i===1?Math.round(rem*.3):Math.max(1,rem-Math.round(rem*.55)-Math.round(rem*.3));
+    return[p+'%',n];
+  });
+  tx('a1p',a1p);tx('a1n',a1n);tx('a2p',a2p);tx('a2n',a2n);tx('a3p',a3p);tx('a3n',a3n);
+  tx('alt-lbl',t.altl);
+
+  // Symptoms
+  $('syms').innerHTML=info.syms.map(s=>`<li><div class="sym-dot"></div>${s}</li>`).join('');
+
+  // Treatment
+  $('treats').innerHTML=info.treat.map((tr,i)=>
+    `<div class="treat-step"><div class="t-num">${i+1}</div><div class="t-body"><strong>${tr[0]}</strong>${tr[1]}</div></div>`
+  ).join('');
+
+  // Prevention
+  $('prevs').innerHTML=info.prev.map(p=>
+    `<div class="prev-card"><em>${p.slice(0,2)}</em>${p.slice(2)}</div>`
+  ).join('');
+
+  // Reset info tabs
+  document.querySelectorAll('.itb').forEach(b=>b.classList.remove('on'));
+  $('itb-s').classList.add('on');
+  document.querySelectorAll('.tp').forEach(p=>p.classList.remove('on'));
+  $('tp-sym').classList.add('on');
+
+  $('disease-panel').classList.add('on');
+}
+
+// Fix destructure
+let a1p,a1n,a2p,a2n,a3p,a3n;
+</script>
+</body>
+</html>

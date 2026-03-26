@@ -1,0 +1,8 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+temp_upload.jpg
+plantvillage-dataset.zip
+non_leaf_raw/
+data/
