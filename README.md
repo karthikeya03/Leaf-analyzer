@@ -1,17 +1,13 @@
-# LeafScanner AI — Plant Disease Detection
 
+# LeafScanner AI — Plant Disease Detection
 A full-stack web application that diagnoses plant diseases from a single leaf photo using a fine-tuned MobileNetV2 model trained on 54,306 images across 39 classes. Works entirely offline after setup. Supports five Indian languages with real-time translation of every result, symptom, treatment step, and prevention tip on the screen.
 
 ---
-
 ## What It Does
-
 Upload or capture a photo of any plant leaf. The app resizes it, normalizes it, runs it through the model, and returns the disease name, confidence score, symptoms, treatment steps, and prevention tips — all translated into your chosen language, instantly, without reloading the page.
 
 ---
-
 ## Features
-
 - Photo upload with drag-and-drop or live camera capture
 - MobileNetV2 model — 94.8% validation accuracy across 39 classes
 - 39 classes: 38 plant diseases (Apple, Tomato, Potato, Corn, Grape, Peach, and more) + 1 custom "Not a Leaf" rejection class
@@ -29,57 +25,58 @@ Upload or capture a photo of any plant leaf. The app resizes it, normalizes it, 
 - Single-file frontend (all HTML, CSS, JS in one index.html) for easy maintenance
 - Uploaded files deleted immediately after prediction in a finally block
 
+## Major Performance Update (March 2026)
+### Pre-Translation Optimization — Predictions Now Instant
+
+**Before:**  
+Every prediction took **many minutes** because the backend was calling Google Translate ~85 times per image (5 languages × 17 strings).
+
+**Now:**  
+All 39 classes (38 diseases + "Not a Leaf") + treatment + prevention tips are **pre-translated once at startup** and stored in memory (`PRE_TRANSLATED` dictionary).
+
+**Result:**
+- Prediction time reduced from **many minutes → under 3 seconds**
+- First server startup takes 30–90 seconds (only once)
+- All future predictions are instant
+- All 5 languages still work perfectly
+- No features or functionality lost — same JSON output, same UI behavior
+
+This is now the default behavior in `app.py`.
+
 ---
-
 ## Project Structure
-
 ```
 leaf-disease-app/
-├── app.py                              # Flask backend — prediction + translation
-├── run.bat                             # One-click launcher (Windows)
-├── requirements.txt                    # All Python dependencies
-├── train.py                            # Complete training script
-├── prepare_nonleaf.py                  # Script to prepare Not a Leaf class data
-├── scrape_leaves.py                    # Script to scrape additional leaf images
+├── app.py # Flask backend — prediction + translation
+├── run.bat # One-click launcher (Windows)
+├── requirements.txt # All Python dependencies
+├── train.py # Complete training script
+├── prepare_nonleaf.py # Script to prepare Not a Leaf class data
+├── scrape_leaves.py # Script to scrape additional leaf images
 ├── model/
-│   ├── best_model.h5                   # Best checkpoint (saved by ModelCheckpoint)
-│   ├── leaf_disease_model.h5           # Final model saved after all epochs
-│   └── training_plot.png              # Accuracy and loss curves graph
+│ ├── best_model.h5 # Best checkpoint (saved by ModelCheckpoint)
+│ ├── leaf_disease_model.h5 # Final model saved after all epochs
+│ └── training_plot.png # Accuracy and loss curves graph
 ├── templates/
-│   └── index.html                      # Complete frontend (HTML + CSS + JS)
-├── static/                             # Static assets
+│ └── index.html # Complete frontend (HTML + CSS + JS)
+├── static/ # Static assets
 ├── data/
-│   └── plantvillage dataset/color/     # 54,306 training images across 38 classes
-├── non_leaf_raw/                       # Raw images for the Not a Leaf class
-└── venv/                               # Python virtual environment
+│ └── plantvillage dataset/color/ # 54,306 training images across 38 classes
+├── non_leaf_raw/ # Raw images for the Not a Leaf class
+└── venv/ # Python virtual environment
 ```
 
 ---
-
 ## How to Run
-
 **Windows — one double-click:**
 ```
 run.bat
-```
-
-run.bat uses the correct absolute Python path so it works even if Python is not in your system PATH:
-
-```bat
-@echo off
-echo ========================================
-echo    Starting LeafScanner AI
-echo ========================================
-"C:\Users\SSK\AppData\Local\Programs\Python\Python310\python.exe" app.py
-pause
 ```
 
 **Manual — in VS Code terminal or PowerShell:**
 ```bash
 # Step 1: Activate the virtual environment
 .\.venv\Scripts\Activate.ps1
-# or if that fails:
-d:\leaf-disease-app\.venv\bin\Activate.ps1
 
 # Step 2: Start Flask
 python app.py
@@ -89,6 +86,10 @@ You will see:
 ```
 Loading model...
 Model loaded!
+🔄 Pre-translating ALL diseases into 5 languages... (only once at startup)
+```
+✅** Pre-translation completed successfully for 38 diseases!**
+```
 * Running on http://127.0.0.1:5000
 ```
 
@@ -98,12 +99,11 @@ Then open `http://127.0.0.1:5000` in any browser. Keep the terminal open the ent
 ```
 http://127.0.0.1:5000/health
 ```
+
 Returns `{"model_loaded": true, "classes": 39, "status": "ok"}` if everything is working.
 
 ---
-
 ## Dataset
-
 - **Source**: PlantVillage dataset (color variant), downloaded from Kaggle
 - **Total images**: 54,306
 - **Original classes**: 38 disease classes covering Apple, Blueberry, Cherry, Corn, Grape, Orange, Peach, Bell Pepper, Potato, Raspberry, Soybean, Squash, Strawberry, Tomato
@@ -113,13 +113,9 @@ Returns `{"model_loaded": true, "classes": 39, "status": "ok"}` if everything is
 - **Image format**: Color JPG, variable original sizes, all resized to 224x224 during loading
 
 ---
-
 ## Model Architecture
-
 The model uses transfer learning on top of MobileNetV2 pretrained on ImageNet.
-
 **Why MobileNetV2**: It is fast, lightweight, and runs well on a laptop CPU without needing a GPU. It was designed for mobile and edge deployment, which matches the goal of running this locally on any machine.
-
 **Why transfer learning**: MobileNetV2 already learned strong low-level and mid-level visual features (edges, textures, shapes) from ImageNet's 1.2 million images. Freezing its convolutional base and only training a new classification head means the model converges faster and needs far fewer images to reach high accuracy.
 
 ```
@@ -150,19 +146,15 @@ Dense(39, activation='softmax')
 ```
 
 ---
-
 ## Preprocessing and Data Augmentation
-
 All preprocessing is handled by Keras ImageDataGenerator. Normalization applies to both training and validation. Augmentation applies to training images only — validation images are only normalized, never augmented, so validation accurately reflects real-world inference.
 
 **Normalization:**
 ```python
 rescale=1./255
 ```
-Divides every pixel value by 255 so the range becomes [0.0, 1.0] instead of [0, 255]. Neural networks train faster and more stably with small floating-point inputs.
 
 **Augmentation applied during training:**
-
 | Setting | Value | Reason |
 |---|---|---|
 | `rotation_range` | 20 degrees | Leaves are photographed at any angle. The model should not fail on a slightly tilted leaf. |
@@ -181,27 +173,7 @@ train_datagen = ImageDataGenerator(
     brightness_range=[0.8, 1.2],
     validation_split=0.2
 )
-
-train_gen = train_datagen.flow_from_directory(
-    DATA_DIR,
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='categorical',
-    subset='training'
-)
-
-val_gen = train_datagen.flow_from_directory(
-    DATA_DIR,
-    target_size=(224, 224),
-    batch_size=32,
-    class_mode='categorical',
-    subset='validation'
-)
 ```
-
-`flow_from_directory` reads images from the folder structure where each subfolder name is a class label. It automatically assigns integer indices to class names and outputs one-hot encoded label vectors for categorical_crossentropy.
-
----
 
 ## Training Configuration
 
