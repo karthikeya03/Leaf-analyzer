@@ -13,6 +13,7 @@
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:ital,wght@0,500;0,600;0,700;0,800;1,600&family=JetBrains+Mono:wght@400;500&display=swap"
     rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
   <style>
     /* ── TOKENS ── */
@@ -5307,39 +5308,93 @@
     /* ══════════════════════════════════════════════
        STATE
     ══════════════════════════════════════════════ */
-    let lang = 'te', file = null, stream = null, currentResult = null, ttsActive = false;
+    let lang = 'te', file = null, stream = null, currentResult = null, ttsActive = false, lastResult = null;
     const $ = id => document.getElementById(id);
     const ht = (id, v) => { const e = $(id); if (e) e.innerHTML = v; };
     const tx = (id, v) => { const e = $(id); if (e) e.textContent = v; };
+    /* ══════════════════════════════════════════════
+       RENDER RESULT — MULTI-LANGUAGE
+    ══════════════════════════════════════════════ */
+    function renderResult(data, selectedLang) {
+      const t = data[selectedLang] || data['en'];
+
+      // Disease name — translated from backend
+      document.getElementById('d-name').textContent = t.disease_name;
+
+      // Confidence — fix the floating point bug
+      const pct = data.confidence;  // already rounded to 1 decimal in backend
+      document.getElementById('conf-pct').textContent = pct + '%';
+
+      // Severity from backend
+      const sev = data.severity;
+      const badge = document.getElementById('d-sev');
+      badge.className = 'sev';
+      const t_ui = T[selectedLang];
+      if (sev === 'high') { badge.classList.add('sev-high'); badge.textContent = t_ui.sh; }
+      else if (sev === 'medium') { badge.classList.add('sev-med'); badge.textContent = t_ui.sm; }
+      else { badge.classList.add('sev-low'); badge.textContent = t_ui.sl; }
+
+      // Alternatives — fix floating point display
+      if (data.alternatives) {
+        data.alternatives.forEach((alt, i) => {
+          const pctEl = document.getElementById('a' + (i + 1) + 'p');
+          const nameEl = document.getElementById('a' + (i + 1) + 'n');
+          if (pctEl) pctEl.textContent = alt.confidence + '%';
+          if (nameEl) nameEl.textContent = alt.label;
+        });
+      }
+
+      // ── SYMPTOMS from backend (translated) ──
+      const symList = document.getElementById('syms');
+      if (symList && t.symptoms) {
+        symList.innerHTML = t.symptoms.map(s => `<li><div class="sym-dot"></div>${s}</li>`).join('');
+      }
+
+      // ── TREATMENT from backend (translated) ──
+      const treatList = document.getElementById('treats');
+      if (treatList && t.treatment) {
+        treatList.innerHTML = t.treatment.map((tr, i) =>
+          `<div class="treat-step"><div class="t-num">${i + 1}</div><div class="t-body">${tr}</div></div>`
+        ).join('');
+      }
+
+      // ── PREVENTION from backend (translated) ──
+      const prevGrid = document.getElementById('prevs');
+      if (prevGrid && t.prevention) {
+        prevGrid.innerHTML = t.prevention.map(p =>
+          `<div class="prev-card">${p}</div>`
+        ).join('');
+      }
+
+      // Gauge update
+      animateGauge(pct, sev);
+      document.getElementById('gauge-pct').textContent = pct + '%';
+      document.getElementById('gauge-sub-lbl').textContent = T[selectedLang].gaugeConf;
+
+      // Show disease panel
+      hideAll();
+      document.getElementById('disease-panel').classList.add('on');
+
+      // Reset tabs
+      document.querySelectorAll('.itb').forEach(b => b.classList.remove('on'));
+      document.getElementById('itb-s').classList.add('on');
+      document.querySelectorAll('.tp').forEach(p => p.classList.remove('on'));
+      document.getElementById('tp-sym').classList.add('on');
+    }
+
     /* ══════════════════════════════════════════════
        LANGUAGE
     ══════════════════════════════════════════════ */
     function setLang(l) {
       lang = l;
-      document.querySelectorAll('.lb').forEach((b, i) => b.classList.toggle('on', ['en', 'te', 'hi', 'ta', 'kn'][i] === l));
-      const t = T[l];
-      tx('ey1', t.ey1); ht('lt', t.lt); tx('ls', t.ls);
-      tx('ey2', t.ey2); ht('rt', t.rt); tx('rs', t.rs);
-      tx('tbu', t.tbu); tx('tbc', t.tbc);
-      tx('dz-t', t.dzt); tx('dz-s', t.dzs); tx('dz-b', t.dzb);
-      tx('abtn-lbl', t.abtn);
-      tx('idle-t', t.idlet); tx('idle-s', t.idles);
-      tx('p1', t.p1); tx('p2', t.p2); tx('p3', t.p3);
-      tx('load-t', t.loadt); tx('load-s', t.loads);
-      tx('h-t', t.ht); tx('h-s', t.hs);
-      tx('conf-lbl', t.cl); tx('alt-lbl', t.altl);
-      tx('itb-s', t.itbs); tx('itb-t', t.itbt); tx('itb-p', t.itbp);
-      tx('cov-txt', t.cov); tx('cs', t.cs); tx('csnap', t.csnap); tx('cstop', t.cstop);
-      tx('ns1', t.ns1); tx('ns2', t.ns2); tx('ns3', t.ns3);
-      tx('s1', t.s1); tx('s2', t.s2); tx('s3', t.s3);
-      tx('lbl-listen', t.listenBtn); tx('lbl-pdf', t.pdfBtn); tx('lbl-share', t.shareBtn);
-      tx('stats-btn-lbl', t.statsBtn);
-      tx('modal-title', t.modalTitle);
-      tx('ms1', t.ms1); tx('ms2', t.ms2); tx('ms3', t.ms3);
-      tx('cl-acc', t.clAcc); tx('cl-loss', t.clLoss);
-      tx('ep-label', t.epLabel);
-      tx('cam-hint', t.camHint);
-      tx('gauge-sub-lbl', t.gaugeConf);
+      document.querySelectorAll('.lb').forEach((b, i) =>
+        b.classList.toggle('on', ['en', 'te', 'hi', 'ta', 'kn'][i] === l)
+      );
+
+      // Re-render current result in new language
+      if (lastResult) {
+        renderResult(lastResult, lang);
+      }
     }
     /* ══════════════════════════════════════════════
        TABS
@@ -5429,52 +5484,86 @@
       $('btn-start').disabled = false;
     }
     function camSnap() {
-      const v = $$('vid'), c = $$('cnv');
-      if (!stream) { showToast('❌', 'Please start the camera first.'); return; }
-      c.width = v.videoWidth || 640;
-      c.height = v.videoHeight || 480;
-      c.getContext('2d').drawImage(v, 0, 0);
+      const v = $('vid');
+      const c = $('cnv');
+
+      if (!stream) {
+        showToast('❌', 'Please click Start first!');
+        return;
+      }
+
+      // Set canvas size to match video
+      c.width = v.videoWidth || 1280;
+      c.height = v.videoHeight || 720;
+
+      // Draw current frame from video to canvas
+      const ctx = c.getContext('2d');
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+
+      // Flash effect
       const fl = $('flash');
       fl.style.opacity = '1';
-      setTimeout(() => fl.style.opacity = '0', 120);
-      c.toBlob(b => {
-        const f = new File([b], 'camera_capture.jpg', { type: 'image/jpeg' });
-        loadFile(f);
-        camStop();
-        // Switch to upload tab to show preview
-        switchTab('upload', $('tb-up'));
-        $('tb-up').classList.add('on');
-        $('tb-cam').classList.remove('on');
-        showToast('📸', 'Photo captured! Click Analyze to scan.');
-      }, 'image/jpeg', .92);
+      setTimeout(() => fl.style.opacity = '0', 80);
+
+      // Convert canvas to image file
+      c.toBlob((blob) => {
+        if (!blob) {
+          showToast('❌', 'Failed to capture image');
+          return;
+        }
+
+        const file = new File([blob], 'camera_capture.jpg', { type: 'image/jpeg' });
+
+        loadFile(file);           // This shows preview and enables Analyze button
+        camStop();                // Stop camera after capture
+        switchTab('upload', $('tb-up'));   // Switch to upload tab
+
+        showToast('📸', 'Photo captured successfully! Click Analyze Leaf now.');
+      }, 'image/jpeg', 0.92);
     }
     /* ══════════════════════════════════════════════
        ANALYZE
     ══════════════════════════════════════════════ */
     async function analyze() {
       if (!file) return;
+
       hideAll();
       stopTTS();
       $('load-panel').classList.add('on');
+
       const fd = new FormData();
       fd.append('file', file);
+
       try {
         const res = await fetch('/predict', { method: 'POST', body: fd });
         const data = await res.json();
+
         $('load-panel').classList.remove('on');
-        if (data.error) { showToast('❌', 'Error: ' + data.error); showIdle(); return; }
+
+        if (data.error) {
+          showToast('❌', 'Error: ' + data.error);
+          showIdle();
+          return;
+        }
+
+        // 🔥 THIS IS THE IMPORTANT LINE
+        currentResult = data;     // ← This was missing
+
+        lastResult = data;
+
         if (data.result === 'Not a Leaf' || data.is_healthy) {
           const t = T[lang];
           tx('h-t', data.is_healthy ? t.ht : 'Not a Leaf Image');
           tx('h-conf', data.confidence + '% ' + t.cshort);
           tx('h-s', data.is_healthy ? t.hs : 'Please upload a clear close-up photo of a plant leaf.');
           $('healthy-panel').classList.add('on');
-          return;
+        } else {
+          renderResult(data, lang);
         }
-        showDisease(data);
+
       } catch (e) {
         $('load-panel').classList.remove('on');
-        showToast('❌', 'Cannot connect to Flask server. Make sure app.py is running on port 5000.');
+        showToast('❌', 'Cannot connect to server');
         showIdle();
       }
     }
@@ -5537,22 +5626,22 @@
       // Name + plant
       // Use Telugu name directly from backend (this is the fix)
       // 🔥 NEW CODE - Title now respects language toggle (EN ↔ TE)
-     // 🌍 Full multi-language support for disease title
-// 🔥 FULL MULTI-LANGUAGE TITLE (smooth toggle)
-let displayName = data.result || "Unknown";
+      // 🌍 Full multi-language support for disease title
+      // 🔥 FULL MULTI-LANGUAGE TITLE (smooth toggle)
+      let displayName = data.result || "Unknown";
 
-if (lang === 'te' || lang === 'te-IN') {
-    displayName = data.telugu_result || data.result;
-} else if (lang === 'hi') {
-    displayName = data.hindi_result || data.result;
-} else if (lang === 'ta') {
-    displayName = data.tamil_result || data.result;
-} else if (lang === 'kn') {
-    displayName = data.kannada_result || data.result;
-}
+      if (lang === 'te' || lang === 'te-IN') {
+        displayName = data.telugu_result || data.result;
+      } else if (lang === 'hi') {
+        displayName = data.hindi_result || data.result;
+      } else if (lang === 'ta') {
+        displayName = data.tamil_result || data.result;
+      } else if (lang === 'kn') {
+        displayName = data.kannada_result || data.result;
+      }
 
-displayName = displayName.replace(/___/g, ' — ').replace(/_/g, ' ');
-tx('d-name', displayName);
+      displayName = displayName.replace(/___/g, ' — ').replace(/_/g, ' ');
+      tx('d-name', displayName);
       // Severity
       const sev = $('d-sev');
       sev.className = 'sev';
@@ -5617,33 +5706,79 @@ tx('d-name', displayName);
     const langVoiceMap = { en: 'en-US', te: 'te-IN', hi: 'hi-IN', ta: 'ta-IN', kn: 'kn-IN' };
     function buildTTSText() {
       if (!currentResult) return '';
-      const { disease, confidence, info } = currentResult;
-      const name = translateLabel(disease).replace(/___/g, ' ').replace(/_/g, ' ');
-      const symptoms = info.syms.join('. ');
-      const treatments = info.treat.map(t => t[0] + ': ' + t[1]).join('. ');
-      return `Leaf disease detected: ${name}. Confidence: ${confidence} percent. Severity: ${info.sev}. Symptoms: ${symptoms}. Treatment: ${treatments}.`;
+
+      let t;
+
+      // For Hindi → use actual Hindi text
+      if (lang === 'hi') {
+        t = currentResult['hi'] || currentResult['en'];
+      }
+      // For Telugu, Tamil, Kannada → use English text (no skipping)
+      else if (lang === 'te' || lang === 'ta' || lang === 'kn') {
+        t = currentResult['en'];
+      }
+      // Default English
+      else {
+        t = currentResult['en'];
+      }
+
+      const diseaseName = t.disease_name || currentResult.result || 'Unknown disease';
+      const confidence = currentResult.confidence || 0;
+
+      let text = `Disease detected: ${diseaseName}. Confidence is ${confidence} percent. `;
+
+      if (t.symptoms && t.symptoms.length > 0) {
+        text += `Symptoms: ${t.symptoms.join('. ')}. `;
+      }
+      if (t.treatment && t.treatment.length > 0) {
+        text += `Treatment steps: ${t.treatment.join('. ')}. `;
+      }
+      if (t.prevention && t.prevention.length > 0) {
+        text += `Prevention tips: ${t.prevention.join('. ')}. `;
+      }
+
+      return text.trim();
     }
     function toggleTTS() {
-      if (ttsActive) { stopTTS(); return; }
-      if (!currentResult) { showToast('ℹ️', 'Please scan a leaf first.'); return; }
-      if (!('speechSynthesis' in window)) { showToast('❌', 'Text-to-speech not supported in this browser.'); return; }
+      if (ttsActive) {
+        stopTTS();
+        return;
+      }
+
+      if (!currentResult) {
+        showToast('❌', 'First analyze a leaf!');
+        return;
+      }
+
       const text = buildTTSText();
+      if (!text) return;
+
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = langVoiceMap[lang] || 'en-US';
-      utterance.rate = 0.88;
-      utterance.pitch = 1;
+
+      // Voice selection
+      if (lang === 'hi') {
+        utterance.lang = 'hi-IN';        // Real Hindi voice
+      } else {
+        utterance.lang = 'en-US';        // Clear English for Telugu/Tamil/Kannada
+      }
+
+      utterance.rate = 0.95;
+      utterance.pitch = 1.0;
+
       utterance.onstart = () => {
         ttsActive = true;
         const btn = $('tts-btn');
         btn.classList.add('speaking');
-        tx('lbl-listen', T[lang].stopListen);
+        tx('lbl-listen', lang === 'te' ? 'ఆపు' : 'Stop');
       };
+
       utterance.onend = utterance.onerror = () => {
         ttsActive = false;
         const btn = $('tts-btn');
         btn.classList.remove('speaking');
-        tx('lbl-listen', T[lang].listenBtn);
+        tx('lbl-listen', lang === 'te' ? 'వినండి' : 'Listen');
       };
+
       speechSynthesis.cancel();
       speechSynthesis.speak(utterance);
     }
@@ -5658,142 +5793,149 @@ tx('d-name', displayName);
        PDF EXPORT (jsPDF)
     ══════════════════════════════════════════════ */
     function downloadPDF() {
-      if (!currentResult) { showToast('ℹ️', 'Please scan a leaf first.'); return; }
-      if (typeof window.jspdf === 'undefined') { showToast('❌', 'PDF library not loaded. Check your connection.'); return; }
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-      const { disease, confidence, info } = currentResult;
-      const name = translateLabel(disease).replace(/___/g, ' — ').replace(/_/g, ' ');
-      const date = new Date().toLocaleString();
-      const W = 210, margin = 18;
-      // Header bar
-      doc.setFillColor(30, 90, 50);
-      doc.rect(0, 0, W, 28, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(16);
-      doc.text('LeafScanner — Diagnosis Report', margin, 11);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.text('AI-powered plant disease detection · MobileNetV2', margin, 17);
-      doc.text('Generated: ' + date, margin, 22);
-      let y = 36;
-      const lineH = 6.5;
-      // Disease name
-      doc.setTextColor(30, 90, 50);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(15);
-      doc.text(name, margin, y); y += lineH;
-      // Plant info
-      doc.setTextColor(100, 130, 110);
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(9);
-      doc.text(info.plant, margin, y); y += lineH;
-      // Severity + Confidence row
-      const sevColors = { high: [200, 50, 50], medium: [200, 130, 30], low: [50, 150, 80] };
-      const sc = sevColors[info.sev] || [100, 100, 100];
-      doc.setFillColor(...sc);
-      doc.roundedRect(margin, y, 38, 8, 2, 2, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      const sevLabel = { high: 'HIGH RISK', medium: 'MODERATE', low: 'LOW RISK' }[info.sev] || 'UNKNOWN';
-      doc.text(sevLabel, margin + 19, y + 5, { align: 'center' });
-      doc.setFillColor(40, 40, 40);
-      doc.roundedRect(60, y, 50, 8, 2, 2, 'F');
-      doc.setTextColor(200, 240, 150);
-      doc.text(`Confidence: ${confidence}%`, 85, y + 5, { align: 'center' });
-      y += 14;
-      // Separator
-      doc.setDrawColor(180, 210, 190);
-      doc.setLineWidth(0.4);
-      doc.line(margin, y, W - margin, y);
-      y += 8;
-      // Section helper
-      const section = (title, items, numbered = false) => {
-        if (y > 260) { doc.addPage(); y = 20; }
-        doc.setTextColor(30, 90, 50);
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(11);
-        doc.text(title, margin, y);
-        y += 5;
-        doc.setDrawColor(78, 203, 113);
-        doc.setLineWidth(0.6);
-        doc.line(margin, y, margin + 40, y);
-        y += 5;
-        doc.setTextColor(60, 80, 70);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9);
-        items.forEach((item, i) => {
-          if (y > 272) { doc.addPage(); y = 20; }
-          const prefix = numbered ? `${i + 1}. ` : '• ';
-          const text = numbered ? `${item[0]}: ${item[1]}` : (typeof item === 'string' ? item.replace(/^[^\w]+/, '') : item);
-          const lines = doc.splitTextToSize(prefix + text, W - margin * 2);
-          lines.forEach(ln => {
-            if (y > 272) { doc.addPage(); y = 20; }
-            doc.text(ln, margin + (numbered ? 0 : 3), y);
-            y += lineH;
-          });
-        });
-        y += 4;
-      };
-      section('Symptoms', info.syms, false);
-      section('Treatment Steps', info.treat, true);
-      // Prevention
-      if (y > 250) { doc.addPage(); y = 20; }
-      doc.setTextColor(30, 90, 50);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('Prevention', margin, y); y += 5;
-      doc.setDrawColor(78, 203, 113);
-      doc.setLineWidth(0.6);
-      doc.line(margin, y, margin + 30, y); y += 5;
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9);
-      doc.setTextColor(60, 80, 70);
-      const prevClean = info.prev.map(p => p.replace(/^[^\w]+/, ''));
-      const cols = 3, colW = (W - margin * 2) / cols;
-      prevClean.forEach((p, i) => {
-        const col = i % cols, row = Math.floor(i / cols);
-        doc.text('- ' + p, margin + col * colW, y + row * lineH);
-      });
-      y += Math.ceil(prevClean.length / cols) * lineH + 8;
-      // Footer
-      doc.setFillColor(240, 248, 242);
-      doc.rect(0, 285, W, 12, 'F');
-      doc.setTextColor(100, 140, 110);
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(7.5);
-      doc.text('LeafScanner AI v2.0 · For informational use. Consult an agricultural expert for final diagnosis.', W / 2, 292, { align: 'center' });
-      const fname = 'LeafScanner_' + name.replace(/[^a-zA-Z0-9]/g, '_').substring(0, 40) + '.pdf';
-      doc.save(fname);
-      showToast('✅', T[lang].pdfDone);
+    if (!currentResult) {
+        showToast('❌', 'First analyze a leaf!');
+        return;
     }
-    /* ══════════════════════════════════════════════
+
+    // Show loading animation (stays until PDF is fully generated and download starts)
+    const loadingHTML = `
+        <div id="pdfLoadingOverlay" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(5,13,9,0.96);z-index:99999;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+            <div style="width:80px;height:80px;border:8px solid #166534;border-top:8px solid #22C55E;border-radius:50%;animation:spin 1.3s linear infinite;"></div>
+            <p style="margin-top:30px;color:#ecfdf5;font-size:19px;font-weight:700;letter-spacing:0.5px;">Generating Clean English PDF...</p>
+            <p style="margin-top:10px;color:#86EFAC;font-size:15px;">This can take 12–16 seconds</p>
+        </div>
+        <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+    `;
+    const overlay = document.createElement('div');
+    overlay.innerHTML = loadingHTML;
+    document.body.appendChild(overlay);
+
+    // Always English - clean & professional
+    const t = currentResult['en'];
+    const diseaseName = t.disease_name || currentResult.result || 'Unknown Disease';
+    const confidence = currentResult.confidence || 0;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    const margin = 20;
+    let y = 25;
+
+    // Green Header
+    doc.setFillColor(16, 185, 94);
+    doc.rect(0, 0, 210, 35, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.text("LeafScanner AI", margin, 18);
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "normal");
+    doc.text("Plant Disease Detection Report • AI v2.0", margin, 27);
+
+    doc.setTextColor(240, 240, 240);
+    doc.setFontSize(9);
+    doc.text(new Date().toLocaleDateString('en-IN', { day:'numeric', month:'long', year:'numeric' }), 145, 27);
+
+    y = 52;
+
+    // Disease Name
+    doc.setTextColor(16, 185, 94);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(diseaseName, margin, y);
+    y += 14;
+
+    // Confidence
+    doc.setFontSize(11);
+    doc.setTextColor(60, 60, 60);
+    doc.text("CONFIDENCE SCORE", margin, y);
+
+    doc.setFontSize(32);
+    doc.setTextColor(16, 185, 94);
+    doc.text(confidence + "%", margin + 65, y + 6);
+
+    // Bar
+    doc.setFillColor(230, 230, 230);
+    doc.rect(margin, y + 18, 125, 8, 'F');
+    doc.setFillColor(16, 185, 94);
+    doc.rect(margin, y + 18, (confidence / 100) * 125, 8, 'F');
+
+    y += 38;
+
+    function addSection(title, items) {
+        if (y > 245) { doc.addPage(); y = 25; }
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.setTextColor(16, 185, 94);
+        doc.text(title, margin, y);
+        y += 8;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(10.5);
+        doc.setTextColor(70, 70, 70);
+
+        items.forEach(item => {
+            if (y > 270) { doc.addPage(); y = 25; }
+            const lines = doc.splitTextToSize("• " + item, 165);
+            doc.text(lines, margin + 4, y);
+            y += lines.length * 6;
+        });
+        y += 8;
+    }
+
+    addSection("Symptoms", t.symptoms || []);
+    addSection("Treatment", t.treatment || []);
+    addSection("Prevention", t.prevention || []);
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 120);
+    doc.text("Generated by LeafScanner AI v2.0", margin, 285);
+    doc.text("For educational and informational purposes only", margin, 290);
+
+    // Save
+    const cleanName = diseaseName.replace(/[^a-zA-Z0-9]/g, '_');
+    doc.save(`LeafScanner_${cleanName}.pdf`);
+
+    // Hide loading animation AFTER the download has actually started
+    setTimeout(() => {
+        const overlayEl = document.getElementById('pdfLoadingOverlay');
+        if (overlayEl) overlayEl.remove();
+        showToast('📄', 'Clean English PDF downloaded!');
+    }, 15800);   // 4.5 seconds — covers your 14-15 second generation time safely
+}
+/* ══════════════════════════════════════════════
        SHARE
     ══════════════════════════════════════════════ */
     async function shareResult() {
-      if (!currentResult) { showToast('ℹ️', 'Please scan a leaf first.'); return; }
-      const name = translateLabel(currentResult.disease).replace(/___/g, ' — ').replace(/_/g, ' ');
-      const shareData = {
-        title: 'LeafScanner Diagnosis',
-        text: `LeafScanner detected: ${name} (${currentResult.confidence}% confidence). Check your plants!`,
-        url: window.location.href
-      };
+      if (!currentResult) {
+        showToast('❌', 'First analyze a leaf!');
+        return;
+      }
+
+      const diseaseName = document.getElementById('d-name').textContent;
+      const confidence = document.getElementById('conf-pct').textContent;
+
+      const shareText = `LeafScanner AI\nDisease: ${diseaseName}\nConfidence: ${confidence}\n`;
+
       try {
         if (navigator.share) {
-          await navigator.share(shareData);
+          await navigator.share({
+            title: 'LeafScanner Diagnosis',
+            text: shareText,
+            url: window.location.href
+          });
         } else {
-          await navigator.clipboard.writeText(shareData.text + ' ' + shareData.url);
-          showToast('📋', T[lang].copied);
+          // Fallback for desktop
+          await navigator.clipboard.writeText(shareText + window.location.href);
+          showToast('📋', lang === 'te' ? 'లింక్ కాపీ అయింది!' : 'Link copied to clipboard!');
         }
-      } catch (e) {
-        if (e.name !== 'AbortError') {
-          try {
-            await navigator.clipboard.writeText(shareData.text + ' ' + shareData.url);
-            showToast('📋', T[lang].copied);
-          } catch { showToast('❌', 'Share not available in this browser.'); }
-        }
+      } catch (err) {
+        showToast('❌', lang === 'te' ? 'షేర్ చేయడం సాధ్యం కాలేదు' : 'Share failed');
+        console.error(err);
       }
     }
     /* ══════════════════════════════════════════════

@@ -1,33 +1,19 @@
-from flask import Flask, request, jsonify, render_template
-from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing import image
-import numpy as np
-import os
-import json
 from deep_translator import GoogleTranslator
+import json
+import os
+from time import sleep
 
-app = Flask(__name__)
+print("\n" + "="*70)
+print("TRANSLATION CACHE GENERATOR")
+print("="*70)
+print("Generating translations cache... (this runs only once)\n")
 
-print("Loading model...")
-model = load_model('model/best_model.h5')
-print("Model loaded!")
-
-CLASS_NAMES = [
-    'Apple - Apple Scab', 'Apple - Black Rot', 'Apple - Cedar Apple Rust', 'Apple - Healthy',
-    'Blueberry - Healthy', 'Cherry - Powdery Mildew', 'Cherry - Healthy',
-    'Corn - Cercospora Leaf Spot', 'Corn - Common Rust', 'Corn - Northern Leaf Blight', 'Corn - Healthy',
-    'Grape - Black Rot', 'Grape - Esca', 'Grape - Leaf Blight', 'Grape - Healthy',
-    'Orange - Citrus Greening', 'Peach - Bacterial Spot', 'Peach - Healthy',
-    'Pepper - Bacterial Spot', 'Pepper - Healthy',
-    'Potato - Early Blight', 'Potato - Late Blight', 'Potato - Healthy',
-    'Raspberry - Healthy', 'Soybean - Healthy', 'Squash - Powdery Mildew',
-    'Strawberry - Leaf Scorch', 'Strawberry - Healthy',
-    'Tomato - Bacterial Spot', 'Tomato - Early Blight', 'Tomato - Late Blight',
-    'Tomato - Leaf Mold', 'Tomato - Septoria Leaf Spot',
-    'Tomato - Spider Mites', 'Tomato - Target Spot',
-    'Tomato - Yellow Leaf Curl Virus', 'Tomato - Mosaic Virus', 'Tomato - Healthy',
-    'Not a Leaf'
-]
+# Try to import requests for better timeout handling
+try:
+    import requests
+    requests.adapters.DEFAULT_TIMEOUT = 15
+except:
+    pass
 
 # ── DISEASE DATABASE (English) ────────────────────────────────────────────────
 DISEASE_DB = {
@@ -267,166 +253,64 @@ DISEASE_DB = {
     },
 }
 
-# ====================== BEST LONG-TERM TRANSLATION (JSON CACHE) ======================
-print("Loading translations from cache...")
+translations_cache = {}
+disease_count = len(DISEASE_DB)
 
-PRE_TRANSLATED = {}
-
-# Try to load from pre-generated cache file
-if os.path.exists('translations_cache.json'):
-    try:
-        with open('translations_cache.json', 'r', encoding='utf-8') as f:
-            PRE_TRANSLATED = json.load(f)
-        print(f"✅ Loaded translations cache for {len(PRE_TRANSLATED)} diseases (instant)")
-    except Exception as e:
-        print(f"⚠️  Failed to load cache: {e}")
-        PRE_TRANSLATED = {}
-else:
-    print("⚠️  translations_cache.json not found. Generating on-demand...")
-
-# Built-in English translations (fast fallback, no API needed)
-ENGLISH_TRANSLATIONS = {}
-for disease_key, info in DISEASE_DB.items():
+for idx, (disease_key, info) in enumerate(DISEASE_DB.items(), 1):
     is_healthy = 'Healthy' in disease_key
     base_message = 'Healthy leaf detected! No disease found.' if is_healthy else f'Disease detected: {disease_key.replace("___", " - ").replace("_", " ")}'
-    ENGLISH_TRANSLATIONS[disease_key] = {
-        'disease_name': disease_key.replace('___', ' - ').replace('_', ' '),
-        'message': base_message,
-        'symptoms': info.get('symptoms', []),
-        'treatment': info.get('treatment', []),
-        'prevention': info.get('prevention', [])
-    }
-
-# Helper to get translations (cached or on-demand)
-def get_disease_translations(disease_key):
-    """Get translations for a disease. Uses cache if available, otherwise English."""
-    if disease_key in PRE_TRANSLATED:
-        return PRE_TRANSLATED[disease_key]
     
-    # Fallback to English for all languages
-    return {
-        'en': ENGLISH_TRANSLATIONS.get(disease_key, ENGLISH_TRANSLATIONS.get('default', {})),
-        'te': ENGLISH_TRANSLATIONS.get(disease_key, ENGLISH_TRANSLATIONS.get('default', {})),
-        'hi': ENGLISH_TRANSLATIONS.get(disease_key, ENGLISH_TRANSLATIONS.get('default', {})),
-        'ta': ENGLISH_TRANSLATIONS.get(disease_key, ENGLISH_TRANSLATIONS.get('default', {})),
-        'kn': ENGLISH_TRANSLATIONS.get(disease_key, ENGLISH_TRANSLATIONS.get('default', {}))
-    }
-
-print(f"✅ Ready! (Using cached translations for {len(PRE_TRANSLATED)} diseases)")
-# ==================================================================================
-
-# Default for any class not in the DB
-DEFAULT_INFO = {
-    'severity': 'medium',
-    'symptoms': ['Visible discoloration or lesions on leaf surface','Abnormal spotting or blotching pattern on leaves','Possible yellowing around affected areas','Changes in leaf texture or appearance','Reduced plant vigor and growth'],
-    'treatment': ['Isolate affected plants to prevent spread to healthy ones','Remove infected tissue by pruning affected leaves and stems carefully','Apply appropriate fungicide or pesticide after consulting local extension','Improve growing conditions including spacing drainage and nutrition'],
-    'prevention': ['Use disease-resistant varieties whenever possible','Water only at base of plants and never wet foliage','Maintain good air circulation with proper plant spacing','Practice crop rotation every 2 to 3 years']
-}
-
-LANG_CODES = {
-    'te': 'te',
-    'hi': 'hi',
-    'ta': 'ta',
-    'kn': 'kn'
-}
-
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/predict', methods=['POST'])
-def predict():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-
-    temp_path = 'temp_upload.jpg'
-    file.save(temp_path)
-
-    try:
-        # ── Preprocess ──────────────────────────────────────
-        img       = image.load_img(temp_path, target_size=(224, 224))
-        img_array = image.img_to_array(img)
-        img_array = np.expand_dims(img_array, axis=0) / 255.0
-
-        # ── Inference ───────────────────────────────────────
-        predictions     = model.predict(img_array, verbose=0)
-        predicted_index = int(np.argmax(predictions))
-        confidence      = float(predictions[0][predicted_index])
-        predicted_class = CLASS_NAMES[predicted_index]
-
-        # ── Top-3 alternatives ──────────────────────────────
-        top3_idx  = np.argsort(predictions[0])[::-1][:4]
-        alternatives = [
-            {
-                'label':      CLASS_NAMES[int(i)],
-                'confidence': round(float(predictions[0][i]) * 100, 1)
+    print(f"[{idx}/{disease_count}] {disease_key[:40]:40} → ", end="", flush=True)
+    
+    translations_cache[disease_key] = {}
+    
+    for lang in ['en', 'te', 'hi', 'ta', 'kn']:
+        if lang == 'en':
+            translations_cache[disease_key][lang] = {
+                'disease_name': disease_key.replace('___', ' - ').replace('_', ' '),
+                'message': base_message,
+                'symptoms': info.get('symptoms', []),
+                'treatment': info.get('treatment', []),
+                'prevention': info.get('prevention', [])
             }
-            for i in top3_idx if int(i) != predicted_index
-        ][:3]
+            print("en", end=" ", flush=True)
+            continue
+        
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                translator = GoogleTranslator(source='en', target=lang)
+                translations_cache[disease_key][lang] = {
+                    'disease_name': translator.translate(disease_key.replace('___', ' - ').replace('_', ' ')),
+                    'message': translator.translate(base_message),
+                    'symptoms': [translator.translate(s) for s in info.get('symptoms', [])],
+                    'treatment': [translator.translate(s) for s in info.get('treatment', [])],
+                    'prevention': [translator.translate(s) for s in info.get('prevention', [])]
+                }
+                print(lang, end=" ", flush=True)
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    sleep(1)  # Wait before retry
+                    print("↻", end="", flush=True)
+                else:
+                    translations_cache[disease_key][lang] = translations_cache[disease_key]['en']
+                    print(f"!{lang}", end=" ", flush=True)
+    
+    print()  # newline
 
-        # ── Not a Leaf / low confidence ─────────────────────
-        if confidence < 0.50 or predicted_class == 'Not a Leaf':
-            return jsonify({
-                'result':     'Not a Leaf',
-                'confidence': round(confidence * 100, 1),
-                'is_healthy': False,
-                'is_not_leaf': True,
-                'en': {'disease_name': 'Not a Leaf', 'message': 'Please upload a clear close-up photo of a plant leaf.', 'symptoms': [], 'treatment': [], 'prevention': []},
-                'te': {'disease_name': 'ఆకు కాదు',   'message': 'దయచేసి మొక్క ఆకు యొక్క స్పష్టమైన క్లోజప్ ఫోటోను అప్‌లోడ్ చేయండి.', 'symptoms': [], 'treatment': [], 'prevention': []},
-                'hi': {'disease_name': 'पत्ता नहीं',  'message': 'कृपया पौधे की पत्ती की स्पष्ट क्लोज़-अप फ़ोटो अपलोड करें।', 'symptoms': [], 'treatment': [], 'prevention': []},
-                'ta': {'disease_name': 'இலை இல்லை',  'message': 'தயவுசெய்து தாவர இலையின் தெளிவான க்ளோஸ்-அப் புகைப்படத்தை பதிவேற்றவும்.', 'symptoms': [], 'treatment': [], 'prevention': []},
-                'kn': {'disease_name': 'ಎಲೆ ಅಲ್ಲ',   'message': 'ದಯವಿಟ್ಟು ಸಸ್ಯದ ಎಲೆಯ ಸ್ಪಷ್ಟ ಕ್ಲೋಸ್-ಅಪ್ ಫೋಟೋ ಅಪ್‌ಲೋಡ್ ಮಾಡಿ.', 'symptoms': [], 'treatment': [], 'prevention': []},
-            })
+# Save to JSON file
+with open('translations_cache.json', 'w', encoding='utf-8') as f:
+    json.dump(translations_cache, f, ensure_ascii=False, indent=2)
 
-        # ── Get disease info ─────────────────────────────────
-        info       = DISEASE_DB.get(predicted_class, DEFAULT_INFO)
-        is_healthy = 'Healthy' in predicted_class
-
-        # === FIXED MULTI-LANGUAGE RETURN (Telugu + others will work now) ===
-        if predicted_class in PRE_TRANSLATED and PRE_TRANSLATED[predicted_class]:
-            trans = PRE_TRANSLATED[predicted_class]
-        else:
-            trans = PRE_TRANSLATED.get('default', {})
-
-        # Make sure all 5 languages are present (fallback to English if missing)
-        result_data = {
-            'en': trans.get('en', {}),
-            'te': trans.get('te', trans.get('en', {})),
-            'hi': trans.get('hi', trans.get('en', {})),
-            'ta': trans.get('ta', trans.get('en', {})),
-            'kn': trans.get('kn', trans.get('en', {})),
-        }
-
-        # Return the full result
-        return jsonify({
-            'result': predicted_class,
-            'confidence': round(confidence * 100, 1),
-            'is_healthy': is_healthy,
-            'is_not_leaf': False,
-            'severity': info['severity'],
-            'alternatives': alternatives,
-            'en': result_data['en'],
-            'te': result_data['te'],
-            'hi': result_data['hi'],
-            'ta': result_data['ta'],
-            'kn': result_data['kn'],
-        })
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-@app.route('/health')
-def health():
-    return jsonify({'status': 'ok', 'model_loaded': model is not None, 'classes': len(CLASS_NAMES)})
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)   # debug=True is fine for local
+print("\n" + "="*70)
+print("✅ SUCCESS!")
+print("="*70)
+print(f"✅ translations_cache.json created successfully!")
+print(f"✅ Cached translations for {len(translations_cache)} diseases")
+print(f"✅ File size: {os.path.getsize('translations_cache.json') / 1024:.1f} KB")
+print("\n📝 Next steps:")
+print("   1. Restart your Flask app")
+print("   2. All future predictions will be instant (<3 seconds)")
+print("   3. No more Google API calls needed!\n")
+print("="*70 + "\n")
