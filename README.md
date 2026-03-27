@@ -1,6 +1,5 @@
-
 # LeafScanner AI — Plant Disease Detection
-A full-stack web application that diagnoses plant diseases from a single leaf photo using a fine-tuned MobileNetV2 model trained on 54,306 images across 39 classes. Works entirely offline after setup. Supports five Indian languages with real-time translation of every result, symptom, treatment step, and prevention tip on the screen.
+A full-stack web application that diagnoses plant diseases from a single leaf photo using a fine-tuned MobileNetV2 model trained on 54,306 images across 39 classes. Works entirely offline after setup. Supports five Indian languages with real-time translation of every result, symptom, treatment step, and prevention tip **in under 3 seconds**.
 
 ---
 ## What It Does
@@ -27,14 +26,13 @@ Upload or capture a photo of any plant leaf. The app resizes it, normalizes it, 
 
 ## Major Performance Update (March 2026)
 ### Pre-Translation Optimization — Predictions Now Instant
-
 **Before:**  
 Every prediction took **many minutes** because the backend was calling Google Translate ~85 times per image (5 languages × 17 strings).
 
 **Now:**  
-All 39 classes (38 diseases + "Not a Leaf") + treatment + prevention tips are **pre-translated once at startup** and stored in memory (`PRE_TRANSLATED` dictionary).
+All 39 classes (38 diseases + "Not a Leaf") + symptoms, treatment, and prevention tips are **pre-translated once at startup** and stored in a cache file (`translations_cache.json`).
 
-**Result:**
+**Result:**  
 - Prediction time reduced from **many minutes → under 3 seconds**
 - First server startup takes 30–90 seconds (only once)
 - All future predictions are instant
@@ -42,6 +40,13 @@ All 39 classes (38 diseases + "Not a Leaf") + treatment + prevention tips are **
 - No features or functionality lost — same JSON output, same UI behavior
 
 This is now the default behavior in `app.py`.
+
+### What I Did to Make It Work in Less Than 3 Seconds
+1. Created a one-time script `generate_translations.py` that translates **all 38 diseases + all texts** into 5 languages and saves everything into `translations_cache.json`.
+2. Updated `app.py` to load translations directly from this cache file instead of calling Google Translate every time.
+3. Removed the old slow on-demand translation functions.
+
+Now the app no longer makes any Google Translate calls during prediction — it just reads the pre-saved translations. This is the permanent long-term fix.
 
 ---
 ## Project Structure
@@ -77,7 +82,6 @@ run.bat
 ```bash
 # Step 1: Activate the virtual environment
 .\.venv\Scripts\Activate.ps1
-
 # Step 2: Start Flask
 python app.py
 ```
@@ -86,10 +90,7 @@ You will see:
 ```
 Loading model...
 Model loaded!
-🔄 Pre-translating ALL diseases into 5 languages... (only once at startup)
-```
-✅** Pre-translation completed successfully for 38 diseases!**
-```
+✅ Loaded translations cache for 38 diseases (instant)
 * Running on http://127.0.0.1:5000
 ```
 
@@ -99,7 +100,6 @@ Then open `http://127.0.0.1:5000` in any browser. Keep the terminal open the ent
 ```
 http://127.0.0.1:5000/health
 ```
-
 Returns `{"model_loaded": true, "classes": 39, "status": "ok"}` if everything is working.
 
 ---
@@ -113,6 +113,7 @@ Returns `{"model_loaded": true, "classes": 39, "status": "ok"}` if everything is
 - **Image format**: Color JPG, variable original sizes, all resized to 224x224 during loading
 
 ---
+
 ## Model Architecture
 The model uses transfer learning on top of MobileNetV2 pretrained on ImageNet.
 **Why MobileNetV2**: It is fast, lightweight, and runs well on a laptop CPU without needing a GPU. It was designed for mobile and edge deployment, which matches the goal of running this locally on any machine.
