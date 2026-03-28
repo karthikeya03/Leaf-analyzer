@@ -332,6 +332,31 @@ LANG_CODES = {
     'kn': 'kn'
 }
 
+def translate_text(text, lang):
+    if lang == 'en':
+        return text
+    try:
+        return GoogleTranslator(source='en', target=lang).translate(text)
+    except Exception:
+        return text
+
+def build_lang(predicted_class, info, base_message, lang):
+    if lang == 'en':
+        return {
+            'disease_name': predicted_class,
+            'message': base_message,
+            'symptoms': info['symptoms'],
+            'treatment': info['treatment'],
+            'prevention': info['prevention'],
+        }
+    return {
+        'disease_name': translate_text(predicted_class, lang),
+        'message': translate_text(base_message, lang),
+        'symptoms': [translate_text(s, lang) for s in info['symptoms']],
+        'treatment': [translate_text(s, lang) for s in info['treatment']],
+        'prevention': [translate_text(s, lang) for s in info['prevention']],
+    }
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -388,34 +413,20 @@ def predict():
         info       = DISEASE_DB.get(predicted_class, DEFAULT_INFO)
         is_healthy = 'Healthy' in predicted_class
 
-        # === FIXED MULTI-LANGUAGE RETURN (Telugu + others will work now) ===
-        if predicted_class in PRE_TRANSLATED and PRE_TRANSLATED[predicted_class]:
-            trans = PRE_TRANSLATED[predicted_class]
-        else:
-            trans = PRE_TRANSLATED.get('default', {})
+        base_message = 'Healthy leaf detected!' if is_healthy else f'Disease detected: {predicted_class}'
 
-        # Make sure all 5 languages are present (fallback to English if missing)
-        result_data = {
-            'en': trans.get('en', {}),
-            'te': trans.get('te', trans.get('en', {})),
-            'hi': trans.get('hi', trans.get('en', {})),
-            'ta': trans.get('ta', trans.get('en', {})),
-            'kn': trans.get('kn', trans.get('en', {})),
-        }
-
-        # Return the full result
         return jsonify({
-            'result': predicted_class,
-            'confidence': round(confidence * 100, 1),
-            'is_healthy': is_healthy,
-            'is_not_leaf': False,
-            'severity': info['severity'],
+            'result':       predicted_class,
+            'confidence':   round(confidence * 100, 1),
+            'is_healthy':   is_healthy,
+            'is_not_leaf':  False,
+            'severity':     info['severity'],
             'alternatives': alternatives,
-            'en': result_data['en'],
-            'te': result_data['te'],
-            'hi': result_data['hi'],
-            'ta': result_data['ta'],
-            'kn': result_data['kn'],
+            'en': build_lang(predicted_class, info, base_message, 'en'),
+            'te': build_lang(predicted_class, info, base_message, 'te'),
+            'hi': build_lang(predicted_class, info, base_message, 'hi'),
+            'ta': build_lang(predicted_class, info, base_message, 'ta'),
+            'kn': build_lang(predicted_class, info, base_message, 'kn'),
         })
 
     except Exception as e:
