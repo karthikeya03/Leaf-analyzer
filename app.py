@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing import image
 import numpy as np
@@ -7,6 +8,7 @@ import json
 from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
+CORS(app)
 
 print("Loading model...")
 model = load_model('model/best_model.h5')
@@ -428,5 +430,6 @@ def health():
     return jsonify({'status': 'ok', 'model_loaded': model is not None, 'classes': len(CLASS_NAMES)})
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)   # debug=True is fine for local
+    # Use the PORT environment variable provided by Render, default to 5000 for local dev
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
