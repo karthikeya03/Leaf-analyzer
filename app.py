@@ -347,30 +347,31 @@ def translate_text(text, lang):
     except Exception:
         return text
 
-def build_lang(predicted_class, info, base_message, lang):
-    cached = PRE_TRANSLATED.get(predicted_class, {})
+def translate_list(items, lang):
+    return [translate_text(t, lang) for t in items]
 
-    if lang == 'en':
-        return cached.get('en', {
-            'disease_name': predicted_class,
-            'message': base_message,
-            'symptoms': info['symptoms'],
-            'treatment': info['treatment'],
-            'prevention': info['prevention'],
-        })
-
-    # Use pre-generated cache in production for low latency.
-    if isinstance(cached, dict) and cached.get(lang):
-        return cached[lang]
-
-    # Fast fallback if cache entry is missing.
-    return {
-        'disease_name': predicted_class,
+def build_translations(disease_name, info, is_healthy):
+    base_message = 'Healthy leaf detected!' if is_healthy else f'Disease detected: {disease_name}'
+    result = {'en': {
+        'disease_name': disease_name,
         'message': base_message,
         'symptoms': info['symptoms'],
         'treatment': info['treatment'],
         'prevention': info['prevention'],
-    }
+    }}
+    langs = ['te', 'hi', 'ta', 'kn']
+    for lang in langs:
+        try:
+            result[lang] = {
+                'disease_name': translate_text(disease_name, lang),
+                'message': translate_text(base_message, lang),
+                'symptoms': translate_list(info['symptoms'], lang),
+                'treatment': translate_list(info['treatment'], lang),
+                'prevention': translate_list(info['prevention'], lang),
+            }
+        except Exception:
+            result[lang] = result['en']
+    return result
 
 @app.route('/')
 def index():
@@ -427,8 +428,7 @@ def predict():
         # ── Get disease info ─────────────────────────────────
         info       = DISEASE_DB.get(predicted_class, DEFAULT_INFO)
         is_healthy = 'Healthy' in predicted_class
-
-        base_message = 'Healthy leaf detected!' if is_healthy else f'Disease detected: {predicted_class}'
+        translated = build_translations(predicted_class, info, is_healthy)
 
         return jsonify({
             'result':       predicted_class,
@@ -437,11 +437,11 @@ def predict():
             'is_not_leaf':  False,
             'severity':     info['severity'],
             'alternatives': alternatives,
-            'en': build_lang(predicted_class, info, base_message, 'en'),
-            'te': build_lang(predicted_class, info, base_message, 'te'),
-            'hi': build_lang(predicted_class, info, base_message, 'hi'),
-            'ta': build_lang(predicted_class, info, base_message, 'ta'),
-            'kn': build_lang(predicted_class, info, base_message, 'kn'),
+            'en': translated['en'],
+            'te': translated['te'],
+            'hi': translated['hi'],
+            'ta': translated['ta'],
+            'kn': translated['kn'],
         })
 
     except Exception as e:
