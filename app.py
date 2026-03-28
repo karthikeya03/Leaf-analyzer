@@ -14,6 +14,13 @@ print("Loading model...")
 model = load_model('model/best_model.h5')
 print("Model loaded!")
 
+# Warm up the model once at startup so first user prediction doesn't time out.
+try:
+    _ = model.predict(np.zeros((1, 224, 224, 3), dtype=np.float32), verbose=0)
+    print("Model warm-up complete!")
+except Exception as e:
+    print(f"Warning: model warm-up failed: {e}")
+
 CLASS_NAMES = [
     'Apple - Apple Scab', 'Apple - Black Rot', 'Apple - Cedar Apple Rust', 'Apple - Healthy',
     'Blueberry - Healthy', 'Cherry - Powdery Mildew', 'Cherry - Healthy',
