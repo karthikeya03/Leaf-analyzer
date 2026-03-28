@@ -5,7 +5,6 @@ from tensorflow.keras.preprocessing import image
 import numpy as np
 import os
 import json
-from deep_translator import GoogleTranslator
 
 app = Flask(__name__)
 CORS(app)
@@ -339,40 +338,6 @@ LANG_CODES = {
     'kn': 'kn'
 }
 
-def translate_text(text, lang):
-    if lang == 'en':
-        return text
-    try:
-        return GoogleTranslator(source='en', target=lang).translate(text)
-    except Exception:
-        return text
-
-def translate_list(items, lang):
-    return [translate_text(t, lang) for t in items]
-
-def build_translations(disease_name, info, is_healthy):
-    base_message = 'Healthy leaf detected!' if is_healthy else f'Disease detected: {disease_name}'
-    result = {'en': {
-        'disease_name': disease_name,
-        'message': base_message,
-        'symptoms': info['symptoms'],
-        'treatment': info['treatment'],
-        'prevention': info['prevention'],
-    }}
-    langs = ['te', 'hi', 'ta', 'kn']
-    for lang in langs:
-        try:
-            result[lang] = {
-                'disease_name': translate_text(disease_name, lang),
-                'message': translate_text(base_message, lang),
-                'symptoms': translate_list(info['symptoms'], lang),
-                'treatment': translate_list(info['treatment'], lang),
-                'prevention': translate_list(info['prevention'], lang),
-            }
-        except Exception:
-            result[lang] = result['en']
-    return result
-
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -428,20 +393,25 @@ def predict():
         # ── Get disease info ─────────────────────────────────
         info       = DISEASE_DB.get(predicted_class, DEFAULT_INFO)
         is_healthy = 'Healthy' in predicted_class
-        translated = build_translations(predicted_class, info, is_healthy)
 
         return jsonify({
-            'result':       predicted_class,
-            'confidence':   round(confidence * 100, 1),
-            'is_healthy':   is_healthy,
-            'is_not_leaf':  False,
-            'severity':     info['severity'],
+            'result': predicted_class,
+            'confidence': round(confidence * 100, 1),
+            'is_healthy': is_healthy,
+            'is_not_leaf': False,
+            'severity': info['severity'],
             'alternatives': alternatives,
-            'en': translated['en'],
-            'te': translated['te'],
-            'hi': translated['hi'],
-            'ta': translated['ta'],
-            'kn': translated['kn'],
+            'en': {
+                'disease_name': predicted_class,
+                'message': f'Disease detected: {predicted_class}',
+                'symptoms': info['symptoms'],
+                'treatment': info['treatment'],
+                'prevention': info['prevention'],
+            },
+            'te': None,
+            'hi': None,
+            'ta': None,
+            'kn': None,
         })
 
     except Exception as e:
