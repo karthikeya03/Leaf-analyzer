@@ -341,20 +341,28 @@ def translate_text(text, lang):
         return text
 
 def build_lang(predicted_class, info, base_message, lang):
+    cached = PRE_TRANSLATED.get(predicted_class, {})
+
     if lang == 'en':
-        return {
+        return cached.get('en', {
             'disease_name': predicted_class,
             'message': base_message,
             'symptoms': info['symptoms'],
             'treatment': info['treatment'],
             'prevention': info['prevention'],
-        }
+        })
+
+    # Use pre-generated cache in production for low latency.
+    if isinstance(cached, dict) and cached.get(lang):
+        return cached[lang]
+
+    # Fast fallback if cache entry is missing.
     return {
-        'disease_name': translate_text(predicted_class, lang),
-        'message': translate_text(base_message, lang),
-        'symptoms': [translate_text(s, lang) for s in info['symptoms']],
-        'treatment': [translate_text(s, lang) for s in info['treatment']],
-        'prevention': [translate_text(s, lang) for s in info['prevention']],
+        'disease_name': predicted_class,
+        'message': base_message,
+        'symptoms': info['symptoms'],
+        'treatment': info['treatment'],
+        'prevention': info['prevention'],
     }
 
 @app.route('/')
